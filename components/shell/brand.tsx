@@ -1,49 +1,50 @@
+import Image from "next/image";
 import Link from "next/link";
 
+import markSrc from "@/public/brand/mark.png";
+import logoSrc from "@/public/brand/logo-full.png";
+
 /**
- * The Forge mark: an anvil silhouette reduced to three strokes. Drawn rather
- * than lettered so the shell has one non-textual anchor, and it reads at 28px.
+ * The Forge mark.
+ *
+ * Cropped from the brand artwork to the HK letterforms and set on a dark
+ * rounded tile. Two reasons for the crop and the tile:
+ *
+ *  - The full artwork's wires and service glyphs turn to noise below ~64px,
+ *    which is most of the places a mark appears. The letterforms survive.
+ *  - The artwork is a glow design with a transparent background, so it needs a
+ *    dark ground to read at all. The tile gives it one in both themes, and the
+ *    hairline edge keeps the silhouette visible on a dark page too.
+ *
+ * The full artwork is used by {@link ForgeLogo}, where there is room for it.
  */
 export function ForgeMark({ size = 28 }: { size?: number }) {
   return (
-    <svg
+    <Image
+      src={markSrc}
+      alt=""
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      aria-hidden="true"
-      focusable="false"
-      className="flex-none"
-    >
-      <rect
-        x="1"
-        y="1"
-        width="30"
-        height="30"
-        rx="9"
-        fill="var(--accent)"
-      />
-      <path
-        d="M8 13h11.5a4.5 4.5 0 0 0 4.5-4.5V8"
-        fill="none"
-        stroke="var(--surface-strong)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8 13v3a3 3 0 0 0 3 3h5"
-        fill="none"
-        stroke="var(--surface-strong)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M12 24h9"
-        fill="none"
-        stroke="var(--surface-strong)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-    </svg>
+      // Small, above the fold, and on every authenticated page.
+      priority
+      className="flex-none rounded-[0.42em]"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+/** The complete artwork, for places with enough room to show the detail. */
+export function ForgeLogo({ size = 96 }: { size?: number }) {
+  return (
+    <Image
+      src={logoSrc}
+      alt="Forge"
+      width={size}
+      height={size}
+      priority
+      className="h-auto flex-none"
+      style={{ width: size }}
+    />
   );
 }
 

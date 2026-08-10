@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { continueAsAction, forgetAllAccountsAction } from "@/lib/auth/actions";
 import { getKnownAccounts } from "@/lib/auth/session";
 import { LoginForm } from "@/components/auth/login-form";
-import { ForgeMark } from "@/components/shell/brand";
+import { ForgeLogo, ForgeMark } from "@/components/shell/brand";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
 export const metadata: Metadata = {
@@ -39,7 +39,9 @@ export default async function LoginPage({
       <main className="flex flex-1 items-center justify-center px-5 py-8 sm:px-8">
         <div className="w-full max-w-[26rem]">
           <div className="mb-6">
-            <p className="eyebrow mb-2">Project resource intelligence</p>
+            {/* The one place with room for the full artwork. */}
+            <ForgeLogo size={80} />
+            <p className="eyebrow mt-5 mb-2">Project resource intelligence</p>
             <h1 className="title-xl text-balance">Sign in to Forge</h1>
             <p className="mt-2 text-pretty text-muted">
               Everything your projects are built on, in one place.
