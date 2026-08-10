@@ -1,52 +1,523 @@
 @import "tailwindcss";
 
 /**
- * Forge design tokens.
+ * Forge design system.
  *
- * Status colours are defined once here and referenced everywhere, so a
- * "healthy" badge in the inventory cannot drift from one on a project page.
- * Colour is never the only signal — every status renders an icon and a label.
+ * The token structure, radii, shadow softness, 160ms transitions and the
+ * translateY(-1px) hover lift are shared with the wider harithkavish.com
+ * ecosystem so Forge reads as part of the same family. Forge's own identity
+ * comes from density and layout — an application shell rather than a centered
+ * marketing column — not from a different palette.
+ *
+ * The accent deliberately stays in the cool teal-slate family. A warm "forge"
+ * accent was considered and rejected: amber and red already carry fixed
+ * meanings in the status scale, and a warm brand colour next to them would
+ * make a decorative element look like a warning.
  */
-@theme {
-  --color-surface: oklch(99% 0 0);
-  --color-surface-raised: oklch(97.5% 0.002 250);
-  --color-border: oklch(91% 0.004 250);
-  --color-ink: oklch(21% 0.01 260);
-  --color-ink-muted: oklch(52% 0.012 260);
 
-  --color-status-healthy: oklch(62% 0.15 152);
-  --color-status-warning: oklch(72% 0.15 78);
-  --color-status-error: oklch(58% 0.19 25);
-  --color-status-unknown: oklch(68% 0.008 260);
-  --color-status-syncing: oklch(60% 0.14 250);
+:root {
+  color-scheme: light;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #f4f9fb;
+  --bg-accent: #e4eef2;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --surface-soft: rgba(255, 255, 255, 0.58);
+  --surface-sunken: rgba(24, 32, 40, 0.025);
+  --text: #182028;
+  --muted: #5a646d;
+  --faint: #808a93;
+  --border: rgba(24, 32, 40, 0.11);
+  --border-strong: rgba(24, 32, 40, 0.18);
+  --accent: #123f50;
+  --accent-strong: #081f29;
+  --accent-soft: rgba(18, 63, 80, 0.08);
+  --pill-bg: rgba(18, 63, 80, 0.08);
+  --shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+  --shadow-strong: 0 16px 36px rgba(15, 23, 42, 0.08);
+  --chrome-bg: rgba(244, 249, 251, 0.84);
+
+  /* Status scale. Colour is never the only signal — every badge pairs these
+     with a glyph and a text label. */
+  --status-healthy: #267f57;
+  --status-healthy-bg: rgba(38, 127, 87, 0.1);
+  --status-healthy-border: rgba(38, 127, 87, 0.2);
+  --status-warning: #8b6a31;
+  --status-warning-bg: rgba(124, 92, 47, 0.09);
+  --status-warning-border: rgba(124, 92, 47, 0.18);
+  --status-error: #a8352c;
+  --status-error-bg: rgba(168, 53, 44, 0.09);
+  --status-error-border: rgba(168, 53, 44, 0.2);
+  --status-unknown: #6b7680;
+  --status-unknown-bg: rgba(107, 118, 128, 0.09);
+  --status-unknown-border: rgba(107, 118, 128, 0.18);
+  --status-syncing: #2c6285;
+  --status-syncing-bg: rgba(44, 98, 133, 0.09);
+  --status-syncing-border: rgba(44, 98, 133, 0.2);
+
+  --radius-card: 1.4rem;
+  --radius-inner: 0.9rem;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b1014;
+  --bg-accent: #11181d;
+  --surface: rgba(17, 24, 29, 0.86);
+  --surface-strong: #121a1f;
+  --surface-soft: rgba(24, 33, 39, 0.72);
+  --surface-sunken: rgba(255, 255, 255, 0.025);
+  --text: #eef2f4;
+  --muted: #a4afb6;
+  --faint: #7d888f;
+  --border: rgba(255, 255, 255, 0.11);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --accent: #cedfe6;
+  --accent-strong: #f3f8fa;
+  --accent-soft: rgba(206, 223, 230, 0.1);
+  --pill-bg: rgba(206, 223, 230, 0.08);
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  --shadow-strong: 0 16px 36px rgba(0, 0, 0, 0.28);
+  --chrome-bg: rgba(11, 16, 20, 0.86);
+
+  --status-healthy: #92d3b0;
+  --status-healthy-bg: rgba(146, 211, 176, 0.1);
+  --status-healthy-border: rgba(146, 211, 176, 0.22);
+  --status-warning: #d9be8a;
+  --status-warning-bg: rgba(217, 190, 138, 0.1);
+  --status-warning-border: rgba(217, 190, 138, 0.22);
+  --status-error: #ee9c94;
+  --status-error-bg: rgba(238, 156, 148, 0.1);
+  --status-error-border: rgba(238, 156, 148, 0.22);
+  --status-unknown: #8d99a2;
+  --status-unknown-bg: rgba(141, 153, 162, 0.1);
+  --status-unknown-border: rgba(141, 153, 162, 0.2);
+  --status-syncing: #9fc8e6;
+  --status-syncing-bg: rgba(159, 200, 230, 0.1);
+  --status-syncing-border: rgba(159, 200, 230, 0.22);
+}
+
+/* `inline` keeps utilities pointing at the variables above, so a theme switch
+   restyles the whole app without regenerating any classes. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-accent: var(--bg-accent);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-surface-soft: var(--surface-soft);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-healthy: var(--status-healthy);
+  --color-warning: var(--status-warning);
+  --color-error: var(--status-error);
+  --color-unknown: var(--status-unknown);
+  --color-syncing: var(--status-syncing);
+
+  --radius-card: var(--radius-card);
+  --radius-inner: var(--radius-inner);
+
+  --shadow-soft: var(--shadow);
+  --shadow-lift: var(--shadow-strong);
+
+  --font-sans: "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: oklch(17% 0.008 260);
-    --color-surface-raised: oklch(21% 0.009 260);
-    --color-border: oklch(29% 0.01 260);
-    --color-ink: oklch(96% 0.003 260);
-    --color-ink-muted: oklch(70% 0.01 260);
-
-    --color-status-healthy: oklch(72% 0.16 152);
-    --color-status-warning: oklch(80% 0.14 78);
-    --color-status-error: oklch(68% 0.18 25);
-    --color-status-unknown: oklch(60% 0.008 260);
-    --color-status-syncing: oklch(70% 0.13 250);
-  }
-}
-
-html {
-  color-scheme: light dark;
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background-color: var(--color-surface);
-  color: var(--color-ink);
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top, var(--bg-accent), transparent 42%),
+    var(--bg);
+  color: var(--text);
   font-family: var(--font-sans);
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+/* The faint plotting grid the ecosystem uses, fading out down the page. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(128, 128, 128, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(128, 128, 128, 0.03) 1px, transparent 1px);
+  background-size: 120px 120px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.38), transparent 80%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+a {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 0.4rem;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Components                                                                  */
+/* -------------------------------------------------------------------------- */
+
+@layer components {
+  .surface-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow);
+  }
+
+  .surface-inset {
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-inner);
+  }
+
+  /* Cards that are themselves links get the ecosystem's 1px lift. */
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-strong);
+  }
+
+  .eyebrow {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+
+  .title-xl {
+    font-size: clamp(1.75rem, 3.4vw, 2.35rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    font-weight: 650;
+  }
+
+  .title-lg {
+    font-size: 1.16rem;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    font-weight: 650;
+  }
+
+  /* Numerals used as data. Tabular figures stop columns from jittering. */
+  .metric {
+    font-size: 1.85rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Buttons ---------------------------------------------------------- */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.62rem 1.05rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.92rem;
+    font-weight: 650;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-strong);
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn--primary {
+    background: var(--accent);
+    color: var(--surface-strong);
+    border-color: transparent;
+    box-shadow: var(--shadow-strong);
+  }
+
+  .btn--primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
+
+  .btn--ghost {
+    background: transparent;
+    box-shadow: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+
+  .btn--ghost:hover:not(:disabled) {
+    background: var(--surface-soft);
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: none;
+  }
+
+  .btn--sm {
+    padding: 0.42rem 0.78rem;
+    font-size: 0.85rem;
+  }
+
+  .btn--danger {
+    color: var(--status-error);
+    border-color: var(--status-error-border);
+    background: var(--status-error-bg);
+    box-shadow: none;
+  }
+
+  /* --- Pills / badges --------------------------------------------------- */
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.36rem;
+    padding: 0.28rem 0.62rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 0.74rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .pill--neutral {
+    background: var(--pill-bg);
+    color: var(--accent);
+    border-color: var(--border);
+  }
+
+  .pill--plain {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+  }
+
+  .pill--healthy {
+    background: var(--status-healthy-bg);
+    color: var(--status-healthy);
+    border-color: var(--status-healthy-border);
+  }
+
+  .pill--warning {
+    background: var(--status-warning-bg);
+    color: var(--status-warning);
+    border-color: var(--status-warning-border);
+  }
+
+  .pill--error {
+    background: var(--status-error-bg);
+    color: var(--status-error);
+    border-color: var(--status-error-border);
+  }
+
+  .pill--unknown {
+    background: var(--status-unknown-bg);
+    color: var(--status-unknown);
+    border-color: var(--status-unknown-border);
+  }
+
+  .pill--syncing {
+    background: var(--status-syncing-bg);
+    color: var(--status-syncing);
+    border-color: var(--status-syncing-border);
+  }
+
+  /* --- Navigation ------------------------------------------------------- */
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.52rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-size: 0.93rem;
+    font-weight: 600;
+  }
+
+  .nav-link:hover {
+    color: var(--text);
+    background: var(--surface-soft);
+    border-color: var(--border);
+  }
+
+  .nav-link[aria-current="page"] {
+    color: var(--text);
+    background: var(--surface-strong);
+    border-color: var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  /* Horizontal tabs used for project and settings subnavigation. */
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.44rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .tab:hover {
+    color: var(--text);
+    background: var(--surface-soft);
+    border-color: var(--border);
+  }
+
+  .tab[aria-current="page"] {
+    color: var(--text);
+    background: var(--surface-strong);
+    border-color: var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  /* --- Forms ------------------------------------------------------------ */
+
+  .field {
+    width: 100%;
+    padding: 0.68rem 0.9rem;
+    border-radius: var(--radius-inner);
+    border: 1px solid var(--border);
+    background: var(--surface-strong);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: inherit;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .field::placeholder {
+    color: var(--faint);
+  }
+
+  .field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.86rem;
+    font-weight: 650;
+    color: var(--text);
+  }
+
+  /* --- Tables ----------------------------------------------------------- */
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.74rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  .data-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .data-table tbody tr {
+    transition: background-color 160ms ease;
+  }
+
+  .data-table tbody tr:hover {
+    background: var(--surface-sunken);
+  }
+
+  /* Anything wider than its container scrolls itself, never the page. */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
