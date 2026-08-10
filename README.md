@@ -12,8 +12,9 @@ to go to manage them.
 Forge reads and organizes. It does not delete, terminate, or modify your
 infrastructure.
 
-> **Status: foundation.** Schema, provider abstraction and credential handling
-> are in place. Authentication and the first integration are next — see
+> **Status: product shell.** The full application — routing, dashboard,
+> inventory, project views, integrations, alerts and settings — runs on a
+> structured mock data layer. Provider adapters are next; see
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Stack
@@ -54,15 +55,40 @@ npm run dev
 ## Layout
 
 ```
-app/                  routes and UI
+app/
+  login/              sign-in, with per-device account resume
+  (app)/              authenticated shell — home, projects, resources,
+                      integrations, alerts, settings
+middleware.ts         route protection; unauthenticated requests never render
+components/
+  shell/              sidebar, drawer, brand, theme toggle
+  ui/                 status badges, cards, tabs, filters, tables
+  project/ resource/  domain components
 lib/
-  core/               domain logic — every query is tenant-scoped
+  auth/               session shape and actions (mock; Auth.js-shaped)
+  data/               the read API the UI talks to — swap for real queries
+  mock/               demo inventory, mirroring the domain model
   db/                 Drizzle schema, client, migrations
   crypto/             credential envelope encryption
-  providers/          ProviderAdapter interface + registry + adapters
-  sync/               background discovery and reconciliation
+  providers/          ProviderAdapter interface + registry
 docs/ARCHITECTURE.md  design decisions and build order
+docs/DEPLOYMENT.md    how this goes live
 ```
+
+## Current phase
+
+Provider integrations are **not** connected. The inventory is generated sample
+data, and the sign-in is a mock credentials flow — both are labelled as such in
+the product rather than implied to be real. What is genuinely wired:
+
+- route protection, sign in/out, and per-device account resume
+- assigning resources to projects, services and environments
+- ignoring and archiving resources
+- creating projects
+- connecting and disconnecting simulated accounts
+
+Those changes persist in cookies on your own device, so the core loop is
+testable end to end. `Settings → Preferences` resets them.
 
 ## Scripts
 
