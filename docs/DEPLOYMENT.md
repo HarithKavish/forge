@@ -26,15 +26,32 @@ npx vercel link           # pick or create the "forge" project
 npx vercel --prod
 ```
 
-Then attach the domain:
+## The domain needs repointing first
 
-```bash
-npx vercel domains add forge.harithkavish.com
+As of the last check, `forge.harithkavish.com` resolves through Cloudflare to
+**GitHub Pages**, which serves a 404 because no Pages site is configured for
+that hostname:
+
+```
+$ curl -sI https://forge.harithkavish.com/
+HTTP/2 404
+server: cloudflare
+x-github-request-id: ...      <- GitHub Pages, not Vercel
 ```
 
-Vercel prints the DNS record to create. For `harithkavish.com` managed
-elsewhere, add a `CNAME` for the `forge` subdomain pointing at
-`cname.vercel-dns.com`.
+So attaching it to Vercel is a DNS change, not just a Vercel setting:
+
+1. Deploy to Vercel and confirm the generated `*.vercel.app` URL works.
+2. `npx vercel domains add forge.harithkavish.com` — Vercel prints the record
+   it wants.
+3. In Cloudflare DNS for `harithkavish.com`, change the `forge` record from its
+   current GitHub Pages target to `cname.vercel-dns.com`.
+4. Set that record's proxy status to **DNS only** (grey cloud) while the
+   certificate is issued; it can be re-proxied afterwards if desired.
+
+Until step 3, the Vercel deployment is reachable only on its `*.vercel.app`
+URL — the code being live and the domain being pointed at it are two separate
+things.
 
 ## Subsequent deploys
 
