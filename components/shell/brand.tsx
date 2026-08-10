@@ -5,35 +5,25 @@ import markSrc from "@/public/brand/mark.png";
 import logoSrc from "@/public/brand/logo-full.png";
 
 /**
- * The Forge mark.
- *
- * Cropped from the brand artwork to the HK letterforms and set on a dark
- * rounded tile. Two reasons for the crop and the tile:
- *
- *  - The full artwork's wires and service glyphs turn to noise below ~64px,
- *    which is most of the places a mark appears. The letterforms survive.
- *  - The artwork is a glow design with a transparent background, so it needs a
- *    dark ground to read at all. The tile gives it one in both themes, and the
- *    hairline edge keeps the silhouette visible on a dark page too.
- *
- * The full artwork is used by {@link ForgeLogo}, where there is room for it.
+ * The Forge mark — the brand artwork, unaltered apart from trimming its empty
+ * transparent margin and squaring the canvas so it scales without distortion.
  */
-export function ForgeMark({ size = 28 }: { size?: number }) {
+export function ForgeMark({ size = 32 }: { size?: number }) {
   return (
     <Image
       src={markSrc}
       alt=""
       width={size}
       height={size}
-      // Small, above the fold, and on every authenticated page.
+      // Small, above the fold, and present on every authenticated page.
       priority
-      className="flex-none rounded-[0.42em]"
+      className="flex-none"
       style={{ width: size, height: size }}
     />
   );
 }
 
-/** The complete artwork, for places with enough room to show the detail. */
+/** The same artwork at a size where its detail is legible. */
 export function ForgeLogo({ size = 96 }: { size?: number }) {
   return (
     <Image
@@ -42,8 +32,8 @@ export function ForgeLogo({ size = 96 }: { size?: number }) {
       width={size}
       height={size}
       priority
-      className="h-auto flex-none"
-      style={{ width: size }}
+      className="flex-none"
+      style={{ width: size, height: size }}
     />
   );
 }

@@ -39,8 +39,7 @@ export default async function LoginPage({
       <main className="flex flex-1 items-center justify-center px-5 py-8 sm:px-8">
         <div className="w-full max-w-[26rem]">
           <div className="mb-6">
-            {/* The one place with room for the full artwork. */}
-            <ForgeLogo size={80} />
+            <ForgeLogo size={104} />
             <p className="eyebrow mt-5 mb-2">Project resource intelligence</p>
             <h1 className="title-xl text-balance">Sign in to Forge</h1>
             <p className="mt-2 text-pretty text-muted">
