@@ -13,13 +13,13 @@ build/
 dist/
 
 # environment — never commit real credentials
-.env
-.env.local
-.env.*.local
-.env.production
+.env*
+# ...except the committed template
+!.env.example
 
-# vercel
+# vercel — local link + the OIDC token it writes
 .vercel
+.env.local
 
 # typescript
 *.tsbuildinfo
