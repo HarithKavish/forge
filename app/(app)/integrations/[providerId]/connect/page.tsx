@@ -8,6 +8,7 @@ import { GITHUB_SCOPES } from "@/lib/providers/github/oauth";
 import { BackLink, Breadcrumbs, PageHeader, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
 import { ExternalIcon } from "@/components/ui/icons";
+import { TokenConnectForm } from "@/components/integrations/token-connect-form";
 
 export async function generateMetadata({
   params,
@@ -18,25 +19,6 @@ export async function generateMetadata({
   const provider = await getProviderInfo(providerId);
   return { title: `Connect ${provider?.displayName ?? "integration"}` };
 }
-
-/** Plain-English descriptions of the OAuth scopes Forge requests. */
-const SCOPE_EXPLANATIONS: { scope: string; what: string; why: string }[] = [
-  {
-    scope: "repo",
-    what: "Read access to your repositories, including private ones.",
-    why: "Private repositories are invisible without it. GitHub's OAuth Apps have no read-only variant of this scope, so it also grants write — Forge only ever issues GET requests, but the grant itself is broader than what Forge uses.",
-  },
-  {
-    scope: "read:org",
-    what: "See which organisations you belong to.",
-    why: "Without it, repositories owned by an organisation do not appear.",
-  },
-  {
-    scope: "read:user",
-    what: "Read your public profile.",
-    why: "Used to label the connection with the account it belongs to.",
-  },
-];
 
 export default async function ConnectProviderPage({
   params,
@@ -50,6 +32,7 @@ export default async function ConnectProviderPage({
   if (!provider) notFound();
 
   const existing = await listAccountsForProvider(session.workspaceId, providerId);
+  const back = `/integrations/${provider.id}`;
 
   return (
     <div className="mx-auto flex max-w-[44rem] flex-col gap-6">
@@ -57,11 +40,11 @@ export default async function ConnectProviderPage({
         <Breadcrumbs
           items={[
             { label: "Integrations", href: "/integrations" },
-            { label: provider.displayName, href: `/integrations/${provider.id}` },
+            { label: provider.displayName, href: back },
             { label: "Connect" },
           ]}
         />
-        <BackLink href={`/integrations/${provider.id}`} label={provider.displayName} />
+        <BackLink href={back} label={provider.displayName} />
       </div>
 
       <div className="flex items-center gap-3">
@@ -73,71 +56,7 @@ export default async function ConnectProviderPage({
         />
       </div>
 
-      {provider.implemented ? (
-        <>
-          <SectionCard title="What Forge will be able to see">
-            <ul className="flex flex-col gap-3">
-              {SCOPE_EXPLANATIONS.map((item) => (
-                <li key={item.scope}>
-                  <p className="font-mono text-[0.82rem] font-[650]">{item.scope}</p>
-                  <p className="mt-0.5 text-sm">{item.what}</p>
-                  <p className="mt-0.5 text-[0.82rem] leading-relaxed text-muted">
-                    {item.why}
-                  </p>
-                </li>
-              ))}
-            </ul>
-
-            <div className="surface-inset mt-4 px-3.5 py-3">
-              <p className="eyebrow text-[0.68rem]">Requested scope string</p>
-              <p className="mt-1.5 font-mono text-[0.8rem] break-all text-muted">
-                {GITHUB_SCOPES}
-              </p>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="What happens to the token">
-            <ul className="flex list-disc flex-col gap-2 pl-4 text-sm text-muted">
-              <li>
-                Encrypted with AES-256-GCM before it is stored, and bound to this
-                connection so it cannot be reused elsewhere.
-              </li>
-              <li>
-                Decrypted in memory only while Forge is talking to{" "}
-                {provider.displayName}. It is never logged, never returned by an
-                API, and never reaches your browser.
-              </li>
-              <li>
-                Revoked the moment you disconnect — and revocable from{" "}
-                {provider.displayName} at any time, independently of Forge.
-              </li>
-              <li>
-                Forge reads. It does not create, modify, or delete anything in
-                your account.
-              </li>
-            </ul>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              {/*
-                A link rather than a form: the start route only sets a state
-                cookie and redirects, so there is nothing to protect against
-                double submission.
-              */}
-              <Link
-                href={`/api/integrations/github/start?next=${encodeURIComponent(`/integrations/${provider.id}`)}`}
-                className="btn btn--primary"
-                prefetch={false}
-              >
-                <ExternalIcon size={15} />
-                Continue to {provider.displayName}
-              </Link>
-              <Link href={`/integrations/${provider.id}`} className="btn btn--ghost">
-                Cancel
-              </Link>
-            </div>
-          </SectionCard>
-        </>
-      ) : (
+      {!provider.implemented ? (
         <SectionCard title="Not available yet">
           <p className="text-sm leading-relaxed text-muted">
             The {provider.displayName} adapter has not been built, so there is
@@ -163,6 +82,106 @@ export default async function ConnectProviderPage({
             </a>
           </div>
         </SectionCard>
+      ) : (
+        <>
+          <SectionCard title="What Forge will be able to see">
+            {provider.requiredScopes ? (
+              <ul className="flex flex-col gap-1.5">
+                {provider.requiredScopes.map((scope) => (
+                  <li key={scope} className="font-mono text-[0.82rem]">
+                    {scope}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {provider.connectMethod === "oauth" ? (
+              <div className="surface-inset mt-4 px-3.5 py-3">
+                <p className="eyebrow text-[0.68rem]">Requested scope string</p>
+                <p className="mt-1.5 font-mono text-[0.8rem] break-all text-muted">
+                  {GITHUB_SCOPES}
+                </p>
+              </div>
+            ) : null}
+
+            {/*
+              Stated up front rather than buried. Where a provider forces a
+              broader grant than Forge uses, that is the user's decision to make
+              with the facts in front of them.
+            */}
+            {provider.caveat ? (
+              <p className="mt-4 rounded-[var(--radius-inner)] border border-(--status-warning-border) bg-(--status-warning-bg) px-3.5 py-3 text-[0.85rem] leading-relaxed text-warning">
+                {provider.caveat}
+              </p>
+            ) : null}
+          </SectionCard>
+
+          <SectionCard title="What happens to the credential">
+            <ul className="flex list-disc flex-col gap-2 pl-4 text-sm text-muted">
+              <li>
+                Encrypted with AES-256-GCM before it is stored, and bound to this
+                connection so it cannot be reused elsewhere.
+              </li>
+              <li>
+                Decrypted in memory only while Forge is talking to{" "}
+                {provider.displayName}. It is never logged, never returned by an
+                API, and never reaches your browser.
+              </li>
+              <li>
+                Destroyed the moment you disconnect — and revocable from{" "}
+                {provider.displayName} at any time, independently of Forge.
+              </li>
+              <li>Forge reads. It creates, modifies and deletes nothing.</li>
+            </ul>
+
+            {provider.connectMethod === "oauth" ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link
+                  href={`/api/integrations/github/start?next=${encodeURIComponent(back)}`}
+                  className="btn btn--primary"
+                  prefetch={false}
+                >
+                  <ExternalIcon size={15} />
+                  Continue to {provider.displayName}
+                </Link>
+                <Link href={back} className="btn btn--ghost">
+                  Cancel
+                </Link>
+              </div>
+            ) : null}
+          </SectionCard>
+
+          {provider.connectMethod === "token" && provider.credentialFields ? (
+            <SectionCard
+              title={`Paste your ${provider.credentialKind.toLowerCase()}`}
+              description={
+                provider.credentialUrl
+                  ? undefined
+                  : "Forge verifies it before storing anything."
+              }
+              actions={
+                provider.credentialUrl ? (
+                  <a
+                    href={provider.credentialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn--sm"
+                  >
+                    <ExternalIcon size={14} />
+                    Create one
+                  </a>
+                ) : null
+              }
+            >
+              <TokenConnectForm
+                providerId={provider.id}
+                providerName={provider.displayName}
+                fields={provider.credentialFields}
+                cancelHref={back}
+              />
+            </SectionCard>
+          ) : null}
+        </>
       )}
     </div>
   );

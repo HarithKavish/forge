@@ -104,7 +104,10 @@ export async function reconcileDiscovered(
   let updated = 0;
 
   for (const item of discovered) {
-    const activity = classifyActivity(item.lastActivityAt, options.providerReportsActivity);
+    const activity = classifyActivity(
+      item.lastActivityAt,
+      item.activitySignalAvailable ?? options.providerReportsActivity,
+    );
 
     await db
       .insert(resources)

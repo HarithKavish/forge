@@ -10,7 +10,10 @@
  * lib/core/ changes.
  */
 
+import { cloudflareAdapter } from "./cloudflare/adapter";
 import { githubAdapter } from "./github/adapter";
+import { neonAdapter } from "./neon/adapter";
+import { vercelAdapter } from "./vercel/adapter";
 import type { ProviderAdapter, ProviderCapabilities } from "./types";
 
 // Adapters are registered as they are implemented. GitHub, AWS, then MongoDB
@@ -26,6 +29,9 @@ function register<T>(adapter: ProviderAdapter<T>): void {
 }
 
 register(githubAdapter);
+register(cloudflareAdapter);
+register(vercelAdapter);
+register(neonAdapter);
 
 /** Look up an adapter, or undefined for a provider slug Forge does not know. */
 export function getAdapter(providerId: string): ProviderAdapter<never> | undefined {

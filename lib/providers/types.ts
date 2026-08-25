@@ -64,6 +64,18 @@ export interface DiscoveredResource {
    * substitute the discovery time, which would make idle resources look active.
    */
   lastActivityAt?: Date;
+  /**
+   * Whether a usage signal exists for this resource *type* at all.
+   *
+   * Separate from `lastActivityAt` being absent, because the two mean different
+   * things: no signal available is permanent and should read as "unknown", while
+   * a signal that exists but shows nothing yet may fill in later. Defaults to
+   * the adapter's `activity` capability when omitted.
+   *
+   * Cloudflare is why this exists — Pages projects report deployments, zones
+   * report nothing, and one flag for the whole provider cannot say both.
+   */
+  activitySignalAvailable?: boolean;
   managementUrl?: string;
   /** Provider-specific extras, kept out of the core schema. */
   metadata?: Record<string, unknown>;

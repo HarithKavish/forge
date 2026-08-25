@@ -51,20 +51,12 @@ export interface ProviderCapabilities {
   managementUrl: boolean;
 }
 
-/** Static catalogue entry. Mirrors lib/providers/registry.ts. */
-export interface ProviderInfo {
-  id: string;
-  displayName: string;
-  /** Grouping for the integrations page: cloud, source, database, edge. */
-  category: "cloud" | "source" | "database" | "edge" | "platform";
-  summary: string;
-  capabilities: ProviderCapabilities;
-  /** What Forge asks for when connecting. */
-  credentialKind: string;
-  consoleUrl: string;
-  /** True when an adapter is registered and this provider can be connected. */
-  implemented: boolean;
-}
+/**
+ * Re-exported rather than redeclared: the catalogue owns this shape, and a
+ * second copy here had already drifted out of sync with it. Type-only, so
+ * nothing from lib/providers/ is pulled into a client bundle.
+ */
+export type { ProviderInfo, CredentialField } from "@/lib/providers/catalogue";
 
 export interface ConnectedAccount {
   id: string;

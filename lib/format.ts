@@ -131,6 +131,11 @@ const RESOURCE_TYPE_LABELS: Record<string, string> = {
   "mongodb.cluster": "Cluster",
   "cloudflare.zone": "Zone",
   "cloudflare.worker": "Worker",
+  "cloudflare.r2_bucket": "R2 bucket",
+  "cloudflare.pages_project": "Pages project",
+  "vercel.domain": "Domain",
+  "neon.project": "Database project",
+  "neon.branch": "Database branch",
 };
 
 /** Falls back to the trailing segment so an unknown type still reads sensibly. */

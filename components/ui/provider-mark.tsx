@@ -14,6 +14,7 @@ const CODES: Record<string, string> = {
   "mongodb-atlas": "MDB",
   cloudflare: "CF",
   vercel: "VC",
+  neon: "NEON",
   azure: "AZ",
   "oracle-cloud": "OCI",
 };

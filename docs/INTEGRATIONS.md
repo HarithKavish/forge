@@ -4,9 +4,14 @@ Forge connects to a platform, discovers what exists there, and files it into the
 inventory. Adapters are additive: nothing in `lib/core/` knows a provider name,
 and no adapter imports the database.
 
-Implemented: **GitHub**. Everything else in the catalogue is listed so the shape
-of the product is visible, and is labelled *adapter not built yet* rather than
-being offered as a connect button that cannot work.
+Implemented: **GitHub**, **Cloudflare**, **Vercel**, **Neon**. Everything else
+in the catalogue is listed so the shape of the product is visible, and is
+labelled *adapter not built yet* rather than being offered as a connect button
+that cannot work.
+
+GitHub connects over OAuth. The other three take an API token, entered on the
+connect page — Forge verifies it with the provider before storing anything, so a
+bad token is rejected without ever reaching the database.
 
 ---
 
@@ -179,6 +184,101 @@ Destroys the stored credential and removes that account's resources. Nothing at
 GitHub is changed. You can also revoke Forge's access from
 <https://github.com/settings/applications> at any time — the next sync then
 fails with an auth error and the account is marked *needs re-auth*.
+
+---
+
+## Cloudflare
+
+**Credential:** API token, created at
+<https://dash.cloudflare.com/profile/api-tokens>.
+
+The best-behaved provider Forge talks to: Cloudflare's tokens are genuinely
+fine-grained, so this connection is properly read-only. Grant only the products
+you want discovered — Forge skips what the token cannot see rather than failing
+the run.
+
+| Permission | Needed for |
+|---|---|
+| Account · Account Settings · Read | identifying the account |
+| Zone · Zone · Read | zones |
+| Account · Workers Scripts · Read | Workers |
+| Account · Workers R2 Storage · Read | R2 buckets |
+| Account · Cloudflare Pages · Read | Pages projects |
+
+**Discovers:** zones, Workers, R2 buckets, Pages projects.
+
+**Activity:** only Pages projects have one — their latest deployment. Zones,
+Workers and R2 expose no usage signal over REST, and say so per resource rather
+than being reported as quiet. `modified_on` is deliberately *not* used as
+activity: it moves when configuration changes, which would make a dormant zone
+look busy. Real traffic figures need the GraphQL analytics API, which this
+adapter does not use yet.
+
+**Cost:** none. Cloudflare bills per account and plan, never per zone.
+
+---
+
+## Vercel
+
+**Credential:** access token from <https://vercel.com/account/tokens>.
+
+> Vercel tokens are **not** scope-limited — a token carries the same rights you
+> have. Set the shortest expiry you can live with, and scope it to a single team
+> rather than your whole account where the option exists.
+
+Add the **Team ID** field if you want a team's projects; leave it empty for a
+personal account. It is sent on every request, not just the first.
+
+**Discovers:** projects and domains.
+
+**Activity:** a project's latest **production deployment**. Not `updatedAt`,
+which moves when a setting changes. This makes Vercel one of the few providers
+where "potentially unused" can be said with confidence — a project nobody has
+deployed in months genuinely is idle.
+
+**Cost:** none. Billing is team-level, so there is no per-project figure.
+
+---
+
+## Neon
+
+**Credential:** API key from
+<https://console.neon.tech/app/settings/api-keys>.
+
+> Neon API keys are **not** scope-limited either. Forge only issues GET
+> requests, but the key itself can do more.
+
+**Discovers:** projects and branches. Compute endpoints are folded into their
+branch rather than listed separately — an endpoint on its own is not a thing you
+reason about, but a branch is.
+
+**Activity:** the compute endpoint's `last_active`. A genuine signal: it is when
+a client last connected, so a branch nobody has touched in months is really
+idle.
+
+**Cost:** declared **false**, deliberately. Neon's consumption API returns
+compute hours and storage, not currency. Turning those into money needs the
+account's plan pricing, which the API does not expose — Forge would have to
+hardcode a rate card and present the result as fact, which is exactly what the
+cost model forbids. Usage appears in resource metadata instead.
+
+---
+
+## Credential entry
+
+Token providers share one form, driven by `credentialFields` in the catalogue,
+so a new provider needs no new form code. The order of operations matters:
+
+```
+validate shape (zod)  →  authenticate with the provider  →  persist account  →  encrypt credential  →  discover
+```
+
+Nothing is written until the provider confirms the credential works and says who
+it belongs to. A rejected token touches no table, and a valid one cannot be
+filed under the wrong account.
+
+Secret inputs are `type="password"` with `autoComplete="off"` — these are not
+passwords and should not end up in a password manager's autofill.
 
 ---
 
