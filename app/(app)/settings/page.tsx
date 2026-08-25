@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { requireSession } from "@/lib/auth/session";
 import { signOutAction } from "@/lib/auth/actions";
-import { absoluteDate } from "@/lib/format";
 import { DetailRow, SectionCard } from "@/components/ui/page";
 
 export const metadata: Metadata = {
@@ -24,30 +23,35 @@ export default async function AccountSettingsPage() {
           <DetailRow label="User id">
             <span className="font-mono text-[0.8rem]">{session.userId}</span>
           </DetailRow>
-          <DetailRow label="Signed in">{absoluteDate(session.issuedAt)}</DetailRow>
+          <DetailRow label="Sign-in method">
+            <span className="pill pill--neutral">Google</span>
+          </DetailRow>
         </dl>
       </SectionCard>
 
       <SectionCard title="Authentication">
         <p className="text-sm leading-relaxed text-muted">
-          This preview uses a mock credentials flow — any email and a password of
-          six or more characters signs in, and the session is a plain browser
-          cookie. It is not secure and is not meant to be. Real authentication
-          arrives with Auth.js, using the same session shape, so nothing about
-          this screen or the routing changes when it does.
+          You signed in with Google. Forge stores your name, email address and
+          profile picture, and a record that this Google account belongs to the
+          Forge user above — nothing else. It holds no password and no access to
+          your Google account.
         </p>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Editing your name, changing a password and verifying an email address
-          all need that real backing store, so they are not offered here rather
-          than presented as controls that quietly do nothing.
+          Google is the authentication method, not your identity in Forge. Your
+          projects, resources and workspace belong to the internal user id above,
+          so a different sign-in method can be added later without any of them
+          moving.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          Your name and email come from Google, so they are changed there rather
+          than here.
         </p>
       </SectionCard>
 
       <SectionCard title="Sign out">
         <p className="mb-3 text-sm text-muted">
-          Ends this session. The account stays offered on this device for a
-          faster return; use &ldquo;forget accounts&rdquo; on the sign-in page to
-          clear that too.
+          Clears your Forge session on this device and returns you to the sign-in
+          page. Your Google account itself stays signed in with Google.
         </p>
         <form action={signOutAction}>
           <button type="submit" className="btn">

@@ -1,33 +1,31 @@
 /**
  * Server-side session access.
  *
- * Every protected page and layout reads the session through `requireSession()`.
- * When Auth.js lands, the body of these two functions changes and nothing that
- * calls them does.
+ * The single boundary every page reads through. Its internals changed from a
+ * mock cookie to Auth.js + Google without any caller changing, which is the
+ * same seam the future HarithKavish identity platform will slot into.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-  ACCOUNTS_COOKIE,
-  SESSION_COOKIE,
-  decodeCookieValue,
-  isValidSession,
-  parseAccounts,
-} from "./cookies";
-import type { ForgeAccount, ForgeSession } from "./types";
+import { auth } from "./index";
+import type { ForgeSession } from "./types";
 
 export async function getSession(): Promise<ForgeSession | null> {
-  const store = await cookies();
-  const value = decodeCookieValue<unknown>(store.get(SESSION_COOKIE)?.value);
-  return isValidSession(value) ? value : null;
-}
+  const session = await auth();
 
-/** Accounts this browser has seen, for the "continue as" picker on /login. */
-export async function getKnownAccounts(): Promise<ForgeAccount[]> {
-  const store = await cookies();
-  return parseAccounts(store.get(ACCOUNTS_COOKIE)?.value);
+  // A session without a workspace cannot scope a query, so it is not a usable
+  // Forge session even if Auth.js considers the user signed in.
+  if (!session?.user?.id || !session.workspaceId) return null;
+
+  return {
+    userId: session.user.id,
+    email: session.user.email ?? "",
+    name: session.user.name ?? session.user.email ?? "Forge user",
+    image: session.user.image,
+    workspaceId: session.workspaceId,
+    workspaceName: session.workspaceName ?? "Personal workspace",
+  };
 }
 
 /**

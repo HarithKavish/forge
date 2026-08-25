@@ -1,26 +1,43 @@
 /**
- * Session shapes.
+ * Session shapes, and the Auth.js module augmentation that carries them.
  *
- * These types are the contract between the UI and whatever produces a session.
- * Auth.js will populate the same shape later, so no component or route needs to
- * change when the mock is removed — only the implementation behind
- * `getSession()` does.
+ * `ForgeSession` is what the application actually consumes. Keeping it separate
+ * from Auth.js's own `Session` is what lets the identity provider change
+ * without touching a single page: every route reads this shape, not Google's.
  */
 
-/** An account known to this browser. Shown in the "continue as" picker. */
-export interface ForgeAccount {
-  userId: string;
-  email: string;
-  name: string;
-}
+import type { DefaultSession } from "next-auth";
+// Not used directly, but importing the module is what makes it resolvable for
+// the `declare module "next-auth/jwt"` augmentation below. Removing this import
+// breaks the build.
+import type { JWT } from "next-auth/jwt";
 
-/** The active session. Mirrors what Auth.js will return from `auth()`. */
+/** The active session, as the rest of Forge sees it. */
 export interface ForgeSession {
+  /** Forge's internal user id. Never a provider's id. */
   userId: string;
   email: string;
   name: string;
-  /** The tenant every query is scoped to. One personal workspace per user. */
+  image?: string | null;
+  /** The tenant every query is scoped to. */
   workspaceId: string;
   workspaceName: string;
-  issuedAt: string;
+}
+
+declare module "next-auth" {
+  interface Session {
+    workspaceId?: string;
+    workspaceName?: string;
+    user: {
+      id?: string;
+    } & DefaultSession["user"];
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    userId?: string;
+    workspaceId?: string;
+    workspaceName?: string;
+  }
 }

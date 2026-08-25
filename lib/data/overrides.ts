@@ -13,7 +13,7 @@
 
 import { cookies } from "next/headers";
 
-import { decodeCookieValue, encodeCookieValue } from "@/lib/auth/cookies";
+import { decodeCookieValue, encodeCookieValue } from "@/lib/cookies";
 import type { Resource } from "./types";
 
 const OVERRIDES_COOKIE = "forge.overrides";

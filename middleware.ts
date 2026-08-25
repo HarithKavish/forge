@@ -1,31 +1,28 @@
 /**
  * Route protection.
  *
- * Redirects happen here rather than in a client effect so an unauthenticated
- * request never renders a protected page at all — no flash of the dashboard
- * before a bounce. This is also exactly where Auth.js middleware plugs in:
- * swap the cookie read for `auth()` and the rules below are unchanged.
+ * Runs before any protected page renders, so an unauthenticated request never
+ * produces dashboard markup at all — no flash of content before a bounce.
+ *
+ * It uses the edge-safe half of the Auth.js config, which can verify the
+ * session JWT on its own. Middleware and the server components therefore reach
+ * the same verdict about a request; if they could disagree, a stale cookie
+ * would ping-pong between /login and /home.
  */
 
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
-import {
-  SESSION_COOKIE,
-  decodeCookieValue,
-  isValidSession,
-} from "@/lib/auth/cookies";
+import { authConfig } from "@/lib/auth/config";
 
-/** Routes reachable without a session. Everything else requires one. */
+const { auth } = NextAuth(authConfig);
+
+/** Reachable without a session. Everything else requires one. */
 const PUBLIC_PATHS = ["/login"];
 
-export function middleware(request: NextRequest) {
+export default auth((request) => {
   const { pathname, search } = request.nextUrl;
-
-  const session = decodeCookieValue<unknown>(
-    request.cookies.get(SESSION_COOKIE)?.value,
-  );
-  const authenticated = isValidSession(session);
+  const authenticated = Boolean(request.auth?.user);
 
   // Forge is an application, not a marketing site: the root is an entry point,
   // never a landing page.
@@ -49,17 +46,21 @@ export function middleware(request: NextRequest) {
 
   if (!authenticated) {
     const loginUrl = new URL("/login", request.url);
-    // Remember where they were headed so login can return them there.
-    if (pathname !== "/home") {
-      loginUrl.searchParams.set("next", `${pathname}${search}`);
-    }
+    // Remember where they were headed so sign-in can return them there.
+    loginUrl.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
-  // Everything except Next internals, the favicon and static asset requests.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  /**
+   * Everything except Next internals, static assets, and /api/auth — the OAuth
+   * callback must reach its handler rather than being redirected to /login,
+   * which would make sign-in impossible.
+   */
+  matcher: [
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 
-import { continueAsAction, forgetAllAccountsAction } from "@/lib/auth/actions";
-import { getKnownAccounts } from "@/lib/auth/session";
-import { LoginForm } from "@/components/auth/login-form";
+import { GoogleSignIn } from "@/components/auth/google-sign-in";
 import { ForgeLogo, ForgeMark } from "@/components/shell/brand";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
@@ -11,20 +9,32 @@ export const metadata: Metadata = {
 };
 
 /**
+ * Auth.js reports failures by bouncing back here with ?error=. These are the
+ * ones a user can actually act on; anything else gets the generic message
+ * rather than a raw error code.
+ */
+const ERROR_MESSAGES: Record<string, string> = {
+  OAuthAccountNotLinked:
+    "That email is already registered to Forge through a different sign-in method.",
+  AccessDenied: "Google sign-in was cancelled, so you were not signed in.",
+  Configuration:
+    "Forge's Google sign-in is not configured correctly. This is a server-side problem, not something you did.",
+  Verification: "That sign-in link has expired. Try again.",
+};
+
+/**
  * The product's front door. Middleware has already bounced anyone who is
  * signed in, so reaching this page means there is no active session.
- *
- * Accounts previously used on this device are offered as one-click resume —
- * the "exactly one session" case then costs a single click rather than
- * retyping credentials.
  */
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
-  const knownAccounts = await getKnownAccounts();
+  const { next, error } = await searchParams;
+  const message = error
+    ? (ERROR_MESSAGES[error] ?? "Sign-in failed. Please try again.")
+    : undefined;
 
   return (
     <div className="relative z-10 flex min-h-dvh flex-col">
@@ -47,65 +57,36 @@ export default async function LoginPage({
             </p>
           </div>
 
-          {knownAccounts.length > 0 ? (
-            <section className="surface-card mb-4 p-4" aria-labelledby="known-accounts">
-              <h2 id="known-accounts" className="eyebrow mb-3">
-                Continue as
-              </h2>
-              <ul className="flex flex-col gap-2">
-                {knownAccounts.map((account) => (
-                  <li key={account.userId}>
-                    <form action={continueAsAction}>
-                      <input type="hidden" name="email" value={account.email} />
-                      <button
-                        type="submit"
-                        className="surface-inset lift flex w-full items-center gap-3 px-3 py-2.5 text-left"
-                      >
-                        <span
-                          className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-border bg-surface-strong text-[0.72rem] font-[650] text-muted"
-                          aria-hidden="true"
-                        >
-                          {account.name.slice(0, 1).toUpperCase()}
-                        </span>
-                        <span className="flex min-w-0 flex-col leading-tight">
-                          <span className="truncate text-[0.9rem] font-[650]">
-                            {account.name}
-                          </span>
-                          <span className="truncate text-[0.78rem] text-muted">
-                            {account.email}
-                          </span>
-                        </span>
-                      </button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-              <form action={forgetAllAccountsAction} className="mt-3">
-                <button type="submit" className="btn btn--ghost btn--sm">
-                  Forget accounts on this device
-                </button>
-              </form>
-            </section>
+          {message ? (
+            <p
+              role="alert"
+              className="surface-card mb-4 border-(--status-error-border) bg-(--status-error-bg) px-4 py-3 text-sm text-error"
+            >
+              {message}
+            </p>
           ) : null}
 
           <section className="surface-card p-5">
-            {knownAccounts.length > 0 ? (
-              <h2 className="eyebrow mb-4">Use another account</h2>
-            ) : null}
-            <LoginForm next={next} />
+            <GoogleSignIn next={next} />
+            <p className="mt-4 text-[0.82rem] leading-relaxed text-muted">
+              Google is currently the only way to sign in to Forge. Forge
+              receives your name, email address and profile picture — nothing
+              else, and it never gains access to anything else in your Google
+              account.
+            </p>
           </section>
 
           {/*
-            Stating plainly what this is. The product should never imply an
-            authentication provider it is not actually talking to.
+            Saying plainly which part is real. Sign-in genuinely authenticates
+            and creates a workspace; the inventory inside is still sample data
+            until provider integrations are connected.
           */}
           <p className="mt-5 text-center text-[0.82rem] leading-relaxed text-muted">
             <span className="pill pill--syncing mr-1.5 align-middle normal-case">
-              Demo
+              Preview
             </span>
-            Authentication is mocked for this preview — any email and a password
-            of six or more characters signs in. No provider account is connected,
-            and the data you see is generated sample inventory.
+            Sign-in is real. The projects and resources inside are sample data —
+            no cloud accounts are connected yet.
           </p>
         </div>
       </main>

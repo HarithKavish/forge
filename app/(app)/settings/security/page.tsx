@@ -34,19 +34,24 @@ export default async function SecuritySettingsPage() {
       >
         <dl>
           <DetailRow label="Method">
-            <span className="pill pill--warning">Mock credentials</span>
+            <span className="pill pill--neutral">Google OAuth 2.0</span>
           </DetailRow>
-          <DetailRow label="Storage">HTTP-only cookie</DetailRow>
+          <DetailRow label="Managed by">Auth.js</DetailRow>
+          <DetailRow label="Storage">HTTP-only, Secure cookie</DetailRow>
           <DetailRow label="Signed">
-            <span className="text-warning">No</span>
+            <span className="text-healthy">Yes</span>
           </DetailRow>
         </dl>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          The session cookie in this preview is base64 JSON — readable and
-          forgeable by anyone who edits it. That is acceptable only because there
-          are no real credentials or customer data behind it. Auth.js replaces it
-          with a signed session; the cookie names, session shape and route
-          protection stay exactly as they are.
+          The session is a signed token in an HTTP-only cookie, so it cannot be
+          read or altered by scripts in the browser. Auth.js handles the OAuth
+          exchange, including the state and PKCE checks that protect the
+          callback — none of that is reimplemented here.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          Signing out clears the cookie. Because sessions are stateless tokens
+          rather than database rows, there is no server-side revocation list; a
+          session ends when its cookie is cleared or it expires after 30 days.
         </p>
       </SectionCard>
 

@@ -22,7 +22,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { env } from "@/lib/env";
+import { encryptionKeyring } from "@/lib/env";
 
 const ALGORITHM = "aes-256-gcm";
 const KEY_BYTES = 32;
@@ -46,7 +46,7 @@ let cachedKeyring: Keyring | undefined;
 function keyring(): Keyring {
   if (cachedKeyring) return cachedKeyring;
 
-  const raw = env().FORGE_ENCRYPTION_KEYS;
+  const raw = encryptionKeyring();
   const ring: Keyring = new Map();
 
   for (const entry of raw.split(",")) {

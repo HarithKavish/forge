@@ -14,7 +14,7 @@
 
 import { cookies } from "next/headers";
 
-import { decodeCookieValue, encodeCookieValue } from "@/lib/auth/cookies";
+import { decodeCookieValue, encodeCookieValue } from "@/lib/cookies";
 import type { ConnectedAccount } from "./types";
 
 const CONNECTIONS_COOKIE = "forge.connections";
