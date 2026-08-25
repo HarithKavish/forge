@@ -11,11 +11,11 @@
  */
 
 import { recordSyncResult } from "@/lib/core/connected-accounts";
-import { loadCredential } from "@/lib/core/credentials";
+import { loadCredential, saveCredential } from "@/lib/core/credentials";
 import { reconcileDiscovered, type ReconcileStats } from "@/lib/core/resources";
 import { requireAdapter } from "@/lib/providers/registry";
 import { ProviderAuthError, ProviderError } from "@/lib/providers/errors";
-import type { DiscoveredResource } from "@/lib/providers/types";
+import type { DiscoveredResource, ProviderAdapter } from "@/lib/providers/types";
 
 export interface DiscoveryOutcome {
   ok: boolean;
@@ -27,14 +27,46 @@ export interface DiscoveryOutcome {
 /** Stops a wedged provider from holding a serverless function open. */
 const DISCOVERY_TIMEOUT_MS = 45_000;
 
+/**
+ * Refresh a credential this long before it actually expires.
+ *
+ * Without the margin a token could pass the check and then expire mid-run,
+ * halfway through pagination — which is the worst moment for it to happen.
+ */
+const REFRESH_MARGIN_MS = 5 * 60_000;
+
+/**
+ * Returns a credential that will still be valid for the whole run, refreshing
+ * and persisting a new one if the stored one is close to expiring.
+ *
+ * A credential with no expiry never needs this, and an adapter with no
+ * `refreshCredentials` cannot do it — both fall through to using what is
+ * stored, which is correct for static keys.
+ */
+async function ensureFreshCredential(
+  accountId: string,
+  adapter: ProviderAdapter<never>,
+  stored: { credential: unknown; expiresAt?: Date },
+): Promise<unknown> {
+  const expiring =
+    stored.expiresAt !== undefined &&
+    stored.expiresAt.getTime() - Date.now() < REFRESH_MARGIN_MS;
+
+  if (!expiring || !adapter.refreshCredentials) return stored.credential;
+
+  const refreshed = await adapter.refreshCredentials(stored.credential as never);
+  await saveCredential(accountId, refreshed.credentials, refreshed.expiresAt);
+  return refreshed.credentials;
+}
+
 export async function runDiscovery(
   workspaceId: string,
   account: { id: string; provider: string; settings: unknown },
 ): Promise<DiscoveryOutcome> {
   const adapter = requireAdapter(account.provider);
 
-  const credentials = await loadCredential(account.id);
-  if (!credentials) {
+  const stored = await loadCredential(account.id);
+  if (!stored) {
     const error = "No stored credential for this account. Reconnect it.";
     await recordSyncResult(workspaceId, account.id, {
       status: "failed",
@@ -48,6 +80,8 @@ export async function runDiscovery(
   const timeout = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
 
   try {
+    const credentials = await ensureFreshCredential(account.id, adapter, stored);
+
     const ctx = {
       credentials: credentials as never,
       settings: (account.settings as Record<string, unknown>) ?? {},
@@ -61,12 +95,9 @@ export async function runDiscovery(
       discovered.push(resource);
     }
 
-    const stats = await reconcileDiscovered(
-      workspaceId,
-      account,
-      discovered,
-      { providerReportsActivity: adapter.capabilities.activity },
-    );
+    const stats = await reconcileDiscovered(workspaceId, account, discovered, {
+      providerReportsActivity: adapter.capabilities.activity,
+    });
 
     await recordSyncResult(workspaceId, account.id, { status: "succeeded" });
     return { ok: true, stats };

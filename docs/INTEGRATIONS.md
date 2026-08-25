@@ -20,10 +20,16 @@ Determined by `app/api/integrations/github/callback/route.ts`:
 https://forge.harithkavish.com/api/integrations/github/callback
 ```
 
-> **GitHub OAuth Apps accept exactly one callback URL** — unlike Google, which
-> takes a list. Local development therefore needs its *own* OAuth App with
-> `http://localhost:3000/api/integrations/github/callback`. One app cannot serve
-> both. If you only ever connect from production, one app is all you need.
+GitHub's current form accepts **up to 10 redirect URIs**, so one OAuth App can
+serve production and local development. Add both:
+
+```
+https://forge.harithkavish.com/api/integrations/github/callback
+http://localhost:3000/api/integrations/github/callback
+```
+
+Leave **Allow wildcard matching** off. It would let tokens be sent to any
+subdomain or path under the URI, which is far more surface than this needs.
 
 ### Creating the OAuth App
 
@@ -34,9 +40,14 @@ https://forge.harithkavish.com/api/integrations/github/callback
 | Application name | `Forge` |
 | Homepage URL | `https://forge.harithkavish.com` |
 | Application description | optional |
-| Authorization callback URL | `https://forge.harithkavish.com/api/integrations/github/callback` |
+| Redirect URI | `https://forge.harithkavish.com/api/integrations/github/callback` |
 
-Leave *Enable Device Flow* unchecked.
+Leave **Enable Device Flow** unchecked and **Allow wildcard matching** off.
+
+Leave **Expire user access tokens** *checked*. Access tokens then last 8 hours
+and come with a refresh token good for 6 months, which Forge handles
+automatically — see [Token lifetime](#token-lifetime). Unchecking it would
+issue a permanent token instead, which is a worse thing to be holding.
 
 Press **Register application**, then **Generate a new client secret**. GitHub
 shows the secret once.
@@ -70,12 +81,39 @@ that grant is more than you want, a GitHub **App** (rather than an OAuth App)
 supports fine-grained read-only repository permissions — noted below as the
 eventual path.
 
+### Token lifetime
+
+With **Expire user access tokens** enabled, GitHub issues:
+
+| Token | Lifetime | Stored |
+|---|---|---|
+| Access token | 8 hours | encrypted, with its expiry in `provider_credentials.expires_at` |
+| Refresh token | 6 months, rotated on each use | encrypted alongside it |
+
+Before a discovery run, the sync layer checks the stored expiry. If the access
+token is within five minutes of expiring, it calls
+`adapter.refreshCredentials()`, persists the new pair, and proceeds. The margin
+matters: without it a token could pass the check and then expire mid-run,
+halfway through pagination.
+
+Refreshing happens *before* a call rather than in response to a 401, so a sync
+is never spent discovering that the credential died. GitHub rotates the refresh
+token on every use, and the new one replaces the old.
+
+If the OAuth App does **not** expire tokens, no refresh token is issued, no
+expiry is stored, and the refresh path is simply never taken —
+`refreshCredentials` is optional on the adapter interface precisely because a
+static API key or an IAM role has nothing to refresh.
+
+If the refresh token itself expires (6 months unused), the next sync fails with
+an auth error and the account is marked *needs re-auth*.
+
 ### What is stored
 
 | Where | What |
 |---|---|
 | `connected_accounts` | GitHub's numeric user id, display name, granted scope. No secret. |
-| `provider_credentials` | The access token, AES-256-GCM encrypted, bound to the connected account |
+| `provider_credentials` | Access token, refresh token and expiry — AES-256-GCM encrypted, bound to the connected account |
 | `resources` | One row per repository |
 
 The token is decrypted in memory only for the duration of a call to GitHub. It

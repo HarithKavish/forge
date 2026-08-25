@@ -49,6 +49,10 @@ export async function GET(request: NextRequest) {
       accessToken: token.accessToken,
       scope: token.scope,
       tokenType: token.tokenType,
+      // Present only when the OAuth App expires access tokens. Without it the
+      // token is permanent and there is nothing to refresh.
+      refreshToken: token.refreshToken,
+      refreshTokenExpiresAt: token.refreshTokenExpiresAt?.toISOString(),
     };
 
     // Ask GitHub who this token belongs to before persisting anything.
@@ -64,7 +68,7 @@ export async function GET(request: NextRequest) {
       settings: identity.settings,
     });
 
-    await saveCredential(account.id, credentials);
+    await saveCredential(account.id, credentials, token.expiresAt);
 
     // Discover immediately: a connection that shows nothing until some later
     // background job would look broken.

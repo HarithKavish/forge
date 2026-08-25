@@ -20,6 +20,7 @@ import { decryptSecret, encryptSecret, needsRotation } from "@/lib/crypto/secret
 export async function saveCredential(
   connectedAccountId: string,
   credential: unknown,
+  expiresAt?: Date,
 ): Promise<void> {
   const { ciphertext, keyVersion } = encryptSecret(
     JSON.stringify(credential),
@@ -28,10 +29,10 @@ export async function saveCredential(
 
   await db
     .insert(providerCredentials)
-    .values({ connectedAccountId, ciphertext, keyVersion })
+    .values({ connectedAccountId, ciphertext, keyVersion, expiresAt })
     .onConflictDoUpdate({
       target: providerCredentials.connectedAccountId,
-      set: { ciphertext, keyVersion, rotatedAt: new Date() },
+      set: { ciphertext, keyVersion, expiresAt: expiresAt ?? null, rotatedAt: new Date() },
     });
 }
 
@@ -42,13 +43,20 @@ export async function saveCredential(
  * decrypt — the latter throws, because silently treating a tampered or
  * mis-keyed row as "not connected" would hide a real problem.
  */
+export interface StoredCredential<T> {
+  credential: T;
+  /** When the provider says it stops working. Absent means it does not expire. */
+  expiresAt?: Date;
+}
+
 export async function loadCredential<T = unknown>(
   connectedAccountId: string,
-): Promise<T | null> {
+): Promise<StoredCredential<T> | null> {
   const [row] = await db
     .select({
       ciphertext: providerCredentials.ciphertext,
       keyVersion: providerCredentials.keyVersion,
+      expiresAt: providerCredentials.expiresAt,
     })
     .from(providerCredentials)
     .where(eq(providerCredentials.connectedAccountId, connectedAccountId))
@@ -72,7 +80,10 @@ export async function loadCredential<T = unknown>(
       .where(eq(providerCredentials.connectedAccountId, connectedAccountId));
   }
 
-  return JSON.parse(plaintext) as T;
+  return {
+    credential: JSON.parse(plaintext) as T,
+    expiresAt: row.expiresAt ?? undefined,
+  };
 }
 
 export async function deleteCredential(connectedAccountId: string): Promise<void> {

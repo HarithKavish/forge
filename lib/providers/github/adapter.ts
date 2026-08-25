@@ -18,8 +18,10 @@ import {
   ProviderRateLimitError,
   ProviderUnavailableError,
 } from "../errors";
+import { refreshGitHubToken } from "./oauth";
 import type {
   AccountIdentity,
+  RefreshedCredentials,
   DiscoveredResource,
   ProviderAdapter,
   ProviderContext,
@@ -35,6 +37,12 @@ export const githubCredentialSchema = z.object({
   /** Scopes GitHub actually granted, which can be narrower than requested. */
   scope: z.string().optional(),
   tokenType: z.string().optional(),
+  /**
+   * Only issued when the OAuth App expires access tokens. Absent means the
+   * access token is permanent and there is nothing to refresh.
+   */
+  refreshToken: z.string().optional(),
+  refreshTokenExpiresAt: z.string().optional(),
 });
 
 export type GitHubCredentials = z.infer<typeof githubCredentialSchema>;
@@ -276,6 +284,36 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
       .map((commit) => commit.commit?.author?.date)
       .filter((date): date is string => Boolean(date))
       .map((date) => ({ signal: "github.push", observedAt: new Date(date) }));
+  },
+
+  /**
+   * Only meaningful when the OAuth App issues expiring tokens. Without a
+   * refresh token this throws rather than silently returning a dead credential,
+   * so the failure is visible as "reconnect" instead of a mysterious 401.
+   */
+  async refreshCredentials(credentials): Promise<RefreshedCredentials<GitHubCredentials>> {
+    if (!credentials.refreshToken) {
+      throw new ProviderAuthError(
+        "This GitHub connection has no refresh token. Reconnect the account.",
+        "github",
+      );
+    }
+
+    const token = await refreshGitHubToken(credentials.refreshToken);
+
+    return {
+      credentials: {
+        accessToken: token.accessToken,
+        // GitHub rotates the refresh token on use; keep the new one.
+        refreshToken: token.refreshToken ?? credentials.refreshToken,
+        refreshTokenExpiresAt:
+          token.refreshTokenExpiresAt?.toISOString() ??
+          credentials.refreshTokenExpiresAt,
+        scope: token.scope ?? credentials.scope,
+        tokenType: token.tokenType ?? credentials.tokenType,
+      },
+      expiresAt: token.expiresAt,
+    };
   },
 
   getManagementUrl(resource: ResourceRef) {

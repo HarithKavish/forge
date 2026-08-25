@@ -121,6 +121,12 @@ export interface ProviderContext<TCredentials = unknown> {
  * Adapters receive this rather than the full row so they cannot depend on
  * project association or any other core concept.
  */
+/** The result of refreshing a credential, with its new expiry if there is one. */
+export interface RefreshedCredentials<TCredentials> {
+  credentials: TCredentials;
+  expiresAt?: Date;
+}
+
 export interface ResourceRef {
   providerResourceId: string;
   resourceType: string;
@@ -181,6 +187,16 @@ export interface ProviderAdapter<TCredentials = unknown> {
     ctx: ProviderContext<TCredentials>,
     resource: ResourceRef,
   ): Promise<CostResult>;
+
+  /**
+   * Exchange an expiring credential for a fresh one.
+   *
+   * Optional because not every provider issues expiring credentials — an AWS
+   * IAM role or a static API key has nothing to refresh. Implement it when the
+   * provider hands back a refresh token, and the sync layer will call it
+   * before a credential goes stale rather than waiting for a 401.
+   */
+  refreshCredentials?(credentials: TCredentials): Promise<RefreshedCredentials<TCredentials>>;
 
   /**
    * Deep link into the provider console. Synchronous and pure — it is a URL

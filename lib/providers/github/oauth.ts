@@ -114,6 +114,50 @@ export interface GitHubTokenResponse {
   accessToken: string;
   scope?: string;
   tokenType?: string;
+  /**
+   * Present only when the OAuth App has "Expire user access tokens" enabled,
+   * which is GitHub's more secure default. Without it the access token never
+   * expires and there is nothing to refresh.
+   */
+  refreshToken?: string;
+  /** Access token expiry — typically 8 hours. */
+  expiresAt?: Date;
+  /** Refresh token expiry — typically 6 months. */
+  refreshTokenExpiresAt?: Date;
+}
+
+interface RawTokenPayload {
+  access_token?: string;
+  scope?: string;
+  token_type?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  refresh_token_expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
+function toTokenResponse(payload: RawTokenPayload): GitHubTokenResponse {
+  if (payload.error || !payload.access_token) {
+    // GitHub's description is safe to surface; it never contains the secret.
+    throw new Error(
+      payload.error_description ?? payload.error ?? "No access token returned.",
+    );
+  }
+
+  const now = Date.now();
+  return {
+    accessToken: payload.access_token,
+    scope: payload.scope,
+    tokenType: payload.token_type,
+    refreshToken: payload.refresh_token,
+    expiresAt: payload.expires_in
+      ? new Date(now + payload.expires_in * 1000)
+      : undefined,
+    refreshTokenExpiresAt: payload.refresh_token_expires_in
+      ? new Date(now + payload.refresh_token_expires_in * 1000)
+      : undefined,
+  };
 }
 
 /** Exchanges the authorization code for an access token, server-side only. */
@@ -139,22 +183,35 @@ export async function exchangeGitHubCode(
     throw new Error(`GitHub token exchange failed with ${response.status}.`);
   }
 
-  const payload = (await response.json()) as {
-    access_token?: string;
-    scope?: string;
-    token_type?: string;
-    error?: string;
-    error_description?: string;
-  };
+  return toTokenResponse((await response.json()) as RawTokenPayload);
+}
 
-  if (payload.error || !payload.access_token) {
-    // GitHub's description is safe to surface; it never contains the secret.
-    throw new Error(payload.error_description ?? payload.error ?? "No access token returned.");
+/**
+ * Exchanges a refresh token for a new access token.
+ *
+ * Runs before a credential expires rather than after a 401, so a sync is never
+ * spent discovering that the token died.
+ */
+export async function refreshGitHubToken(
+  refreshToken: string,
+): Promise<GitHubTokenResponse> {
+  const { clientId, clientSecret } = githubOAuthConfig();
+
+  const response = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub token refresh failed with ${response.status}.`);
   }
 
-  return {
-    accessToken: payload.access_token,
-    scope: payload.scope,
-    tokenType: payload.token_type,
-  };
+  return toTokenResponse((await response.json()) as RawTokenPayload);
 }
