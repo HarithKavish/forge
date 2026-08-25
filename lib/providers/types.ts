@@ -116,17 +116,17 @@ export interface ProviderContext<TCredentials = unknown> {
   signal?: AbortSignal;
 }
 
-/**
- * A resource as stored by Forge, narrowed to the fields an adapter may read.
- * Adapters receive this rather than the full row so they cannot depend on
- * project association or any other core concept.
- */
 /** The result of refreshing a credential, with its new expiry if there is one. */
 export interface RefreshedCredentials<TCredentials> {
   credentials: TCredentials;
   expiresAt?: Date;
 }
 
+/**
+ * A resource as stored by Forge, narrowed to the fields an adapter may read.
+ * Adapters receive this rather than the full row so they cannot depend on
+ * project association or any other core concept.
+ */
 export interface ResourceRef {
   providerResourceId: string;
   resourceType: string;
