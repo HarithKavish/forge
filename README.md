@@ -12,10 +12,10 @@ to go to manage them.
 Forge reads and organizes. It does not delete, terminate, or modify your
 infrastructure.
 
-> **Status: product shell.** The full application — routing, dashboard,
-> inventory, project views, integrations, alerts and settings — runs on a
-> structured mock data layer. Provider adapters are next; see
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> **Status: live.** Real Google sign-in, real Postgres-backed users and
+> workspaces, running at <https://forge.harithkavish.com>. The inventory inside
+> is still sample data — provider adapters are next. See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/AUTH.md](docs/AUTH.md).
 
 ## Stack
 
@@ -24,26 +24,30 @@ Auth.js · Tailwind v4 · deployed on Vercel.
 
 ## Getting started
 
-Requires Node 20+ and a Postgres database ([Neon](https://neon.tech) free tier
-is enough).
+Requires Node 20+, a Postgres database ([Neon](https://neon.tech) free tier is
+enough), and a Google OAuth client.
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-Fill in `.env.local`. Generate the two secrets it needs:
+Fill in `.env.local`:
 
-```bash
-# AUTH_SECRET
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+| Variable | How to get it |
+|---|---|
+| `DATABASE_URL` | Neon → your database → pooled connection string |
+| `AUTH_SECRET` | `npx auth secret` |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | [docs/AUTH.md](docs/AUTH.md) walks through Google Cloud Console |
 
-# FORGE_ENCRYPTION_KEYS — encrypts stored provider credentials
-node -e "console.log('1:' + require('crypto').randomBytes(32).toString('base64'))"
+`FORGE_ENCRYPTION_KEYS` can stay empty for now — it is only needed once a
+provider integration actually stores a credential.
+
+The Google OAuth client needs this exact redirect URI for local development:
+
 ```
-
-Losing `FORGE_ENCRYPTION_KEYS` means every connected provider account has to be
-reconnected. Back it up somewhere real.
+http://localhost:3000/api/auth/callback/google
+```
 
 Then apply the schema and run:
 
@@ -56,7 +60,8 @@ npm run dev
 
 ```
 app/
-  login/              sign-in, with per-device account resume
+  login/              Google sign-in
+  api/auth/           Auth.js route handler (defines the OAuth callback URL)
   (app)/              authenticated shell — home, projects, resources,
                       integrations, alerts, settings
 middleware.ts         route protection; unauthenticated requests never render
@@ -65,30 +70,35 @@ components/
   ui/                 status badges, cards, tabs, filters, tables
   project/ resource/  domain components
 lib/
-  auth/               session shape and actions (mock; Auth.js-shaped)
+  auth/               Auth.js config, session, workspace provisioning
   data/               the read API the UI talks to — swap for real queries
   mock/               demo inventory, mirroring the domain model
   db/                 Drizzle schema, client, migrations
   crypto/             credential envelope encryption
   providers/          ProviderAdapter interface + registry
 docs/ARCHITECTURE.md  design decisions and build order
+docs/AUTH.md          Google OAuth setup and the identity model
 docs/DEPLOYMENT.md    how this goes live
 ```
 
 ## Current phase
 
-Provider integrations are **not** connected. The inventory is generated sample
-data, and the sign-in is a mock credentials flow — both are labelled as such in
-the product rather than implied to be real. What is genuinely wired:
+**Authentication is real.** Google OAuth via Auth.js, with users, Google account
+links and workspaces persisted in Postgres. Google is a sign-in *method*, not
+Forge's identity model — the Google id lives only in `accounts`, while
+`users.id` is a Forge uuid that everything else hangs off. See
+[docs/AUTH.md](docs/AUTH.md).
 
-- route protection, sign in/out, and per-device account resume
+**Provider integrations are not connected.** The inventory is generated sample
+data, labelled as such in the product rather than implied to be real. These
+still work against per-device cookies so the core loop stays testable:
+
 - assigning resources to projects, services and environments
 - ignoring and archiving resources
 - creating projects
 - connecting and disconnecting simulated accounts
 
-Those changes persist in cookies on your own device, so the core loop is
-testable end to end. `Settings → Preferences` resets them.
+`Settings → Preferences` resets them.
 
 ## Scripts
 

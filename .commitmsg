@@ -1,0 +1,10 @@
+docs: describe the real auth, and record the JWT-session constraint
+
+README still claimed sign-in was a mock credentials flow, and
+ARCHITECTURE listed email + password as the plan. Both are now Google
+via Auth.js, verified in production.
+
+Replaces the old "Credentials forces JWT sessions" constraint, which
+described a provider that no longer exists, with the actual reason
+sessions are JWTs: middleware has to verify them in the edge runtime,
+and a database session cannot be checked there.

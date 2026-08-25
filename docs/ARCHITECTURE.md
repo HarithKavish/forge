@@ -19,7 +19,7 @@ choice below is a first choice rather than a migration.
 | App | Next.js 15 (App Router), TypeScript strict | One language for UI, API and provider adapters. Server Components let the inventory render from the database without shipping a client data layer. |
 | Database | Neon Postgres | The domain is unambiguously relational — `User → Project → Environment → Service → Resource` plus a relationship graph. Serverless Postgres matches serverless compute. |
 | ORM | Drizzle | SQL-first and typed; no query engine binary, which matters in a serverless bundle. Migrations are plain reviewable `.sql`. |
-| Auth | Auth.js, email + password | Self-hosted, no vendor on the critical path. Tables follow the Auth.js adapter contract so OAuth login can be added without a migration. |
+| Auth | Auth.js + Google OAuth | Self-hosted, no vendor on the critical path. Google is a sign-in method, not the identity model — see [AUTH.md](AUTH.md). The email/password plan was dropped: it needs a password store and email delivery to be worth anything, and Google gets a real login working today. |
 | Styling | Tailwind v4 | Design tokens live in CSS (`app/globals.css`); status colours are defined once and reused, so a badge cannot drift between pages. |
 | Hosting | Vercel → `forge.harithkavish.com` | Zero-ops deploys. Constraints this imposes are in §9. |
 
@@ -182,10 +182,16 @@ These are real and worth knowing now rather than discovering later:
 2. **Function timeouts** (60s Hobby / 300s Pro) mean sync must be chunked. The
    job queue already models that: a large account enqueues follow-up jobs
    rather than running long.
-3. **Auth.js Credentials forces JWT sessions** — database sessions are not
-   supported for password login. The `sessions` table therefore stays empty in
-   V1 and exists for a future OAuth login provider. Consequence: server-side
-   session revocation needs a token-version column on `users` if we want it.
+3. **JWT sessions, not database sessions.** Middleware must be able to
+   verify a session in the edge runtime, and a database session cannot be
+   checked there. Middleware would then only know that *some* cookie existed
+   while the real check happened later in the request — and a stale cookie
+   would bounce between `/login` and `/home` forever. The `sessions` table is
+   still wired into the adapter, so switching costs no migration.
+   Consequence: no central revocation list; a session ends when its cookie is
+   cleared or expires.
+
+
 4. **Currency.** Providers bill in their own currency (usually USD) while the
    spec's mockups show ₹. Forge stores the provider's currency verbatim and
    will not silently convert. Displaying a single total therefore needs an
