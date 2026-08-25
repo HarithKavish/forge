@@ -288,6 +288,39 @@ export async function assignResource(
     .where(and(eq(resources.workspaceId, workspaceId), eq(resources.id, resourceId)));
 }
 
+/**
+ * Assigns many resources to one project in a single statement.
+ *
+ * Environment and service are cleared rather than carried over: they belong to
+ * whatever project the resource was in before, and pointing them at a foreign
+ * project would leave the row internally inconsistent.
+ */
+export async function assignResourcesToProject(
+  workspaceId: string,
+  resourceIds: string[],
+  projectId: string | null,
+): Promise<number> {
+  if (resourceIds.length === 0) return 0;
+
+  const updated = await db
+    .update(resources)
+    .set({
+      projectId,
+      environmentId: null,
+      serviceId: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(resources.workspaceId, workspaceId),
+        inArray(resources.id, resourceIds),
+      ),
+    )
+    .returning({ id: resources.id });
+
+  return updated.length;
+}
+
 export async function setResourcePresence(
   workspaceId: string,
   resourceId: string,

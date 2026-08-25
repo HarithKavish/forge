@@ -20,6 +20,7 @@ import {
 import { createProject } from "@/lib/core/projects";
 import {
   assignResource,
+  assignResourcesToProject,
   setResourceIgnored,
   setResourcePresence,
 } from "@/lib/core/resources";
@@ -61,6 +62,37 @@ export async function assignResourceAction(formData: FormData): Promise<void> {
 
   revalidateInventory();
   redirect(`/resources/${resourceId}`);
+}
+
+/**
+ * Assigns everything ticked in the inventory to one project.
+ *
+ * Exists because assigning fifty repositories one detail page at a time is not
+ * a workflow. Plain checkboxes in a form, so it works without client JavaScript.
+ */
+export async function assignSelectedAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+
+  const resourceIds = formData
+    .getAll("resourceIds")
+    .map((v) => String(v))
+    .filter(Boolean);
+
+  const rawProject = String(formData.get("projectId") ?? "");
+  const projectId = rawProject === "" ? null : rawProject;
+  const returnTo = String(formData.get("returnTo") ?? "/resources");
+
+  const safeReturn =
+    returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/resources";
+
+  if (resourceIds.length === 0) {
+    redirect(safeReturn + (safeReturn.includes("?") ? "&" : "?") + "assigned=none");
+  }
+
+  const count = await assignResourcesToProject(session.workspaceId, resourceIds, projectId);
+
+  revalidateInventory();
+  redirect(safeReturn + (safeReturn.includes("?") ? "&" : "?") + "assigned=" + count);
 }
 
 export async function setIgnoredAction(formData: FormData): Promise<void> {

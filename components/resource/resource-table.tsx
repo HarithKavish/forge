@@ -36,6 +36,7 @@ export function ResourceTable({
   resources,
   lookups,
   variant = "full",
+  selectable = false,
   emptyTitle = "No resources match this view",
   emptyDescription,
   emptyAction,
@@ -43,6 +44,8 @@ export function ResourceTable({
   resources: Resource[];
   lookups: ResourceLookups;
   variant?: "full" | "compact";
+  /** Adds a checkbox column feeding the bulk-assign form that wraps the table. */
+  selectable?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
   emptyAction?: React.ReactNode;
@@ -60,6 +63,11 @@ export function ResourceTable({
       <table className="data-table">
         <thead>
           <tr>
+            {selectable ? (
+              <th scope="col" className="w-8">
+                <span className="sr-only">Select</span>
+              </th>
+            ) : null}
             <th scope="col">Resource</th>
             <th scope="col">Type</th>
             <th scope="col">Provider</th>
@@ -85,6 +93,17 @@ export function ResourceTable({
 
             return (
               <tr key={resource.id}>
+                {selectable ? (
+                  <td className="w-8">
+                    <input
+                      type="checkbox"
+                      name="resourceIds"
+                      value={resource.id}
+                      aria-label={"Select " + resource.name}
+                      className="h-4 w-4 accent-[var(--accent)]"
+                    />
+                  </td>
+                ) : null}
                 <td className="max-w-[16rem]">
                   <Link
                     href={`/resources/${resource.id}`}

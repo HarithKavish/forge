@@ -11,11 +11,13 @@ import {
   resourceViewCounts,
   type ResourceView,
 } from "@/lib/data/queries";
+import { assignSelectedAction } from "@/lib/data/actions";
 import { money, pluralize } from "@/lib/format";
 import { PageHeader, SectionCard } from "@/components/ui/page";
 import { ViewTabs } from "@/components/ui/tabs";
 import { SearchField, SelectFilter } from "@/components/ui/filters";
 import { ResourceTable, buildLookups } from "@/components/resource/resource-table";
+import { BulkSelection } from "@/components/resource/bulk-selection";
 
 export const metadata: Metadata = {
   title: "Resources",
@@ -42,17 +44,28 @@ const VIEW_NOTES: Partial<Record<ResourceView, string>> = {
   recent: "Discovered in the last 45 days.",
 };
 
+const FORM_ID = "inventory-bulk-assign";
+
 /**
  * The global inventory — the answer to "what do I actually have?".
  *
  * All filter state lives in the URL so any view here is a shareable link, which
- * is what makes "3 resources have no project" on the dashboard able to point
- * straight at the exact list.
+ * is what lets "3 resources have no project" on the dashboard point straight at
+ * the exact list.
+ *
+ * The table sits inside a form so resources can be assigned in bulk. Plain
+ * checkboxes and a server action, so it works without client JavaScript —
+ * assigning fifty repositories one detail page at a time is not a workflow.
  */
 export default async function ResourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; provider?: string; q?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    provider?: string;
+    q?: string;
+    assigned?: string;
+  }>;
 }) {
   const session = await requireSession();
   const params = await searchParams;
@@ -82,6 +95,15 @@ export default async function ResourcesPage({
 
   const preserve = { provider, q: search };
 
+  // Where the bulk action should return to, filters intact.
+  const query = new URLSearchParams();
+  if (view !== "all") query.set("view", view);
+  if (provider !== "all") query.set("provider", provider);
+  if (search) query.set("q", search);
+  const returnTo = query.toString() ? `/resources?${query}` : "/resources";
+
+  const assigned = params.assigned;
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -94,6 +116,21 @@ export default async function ResourcesPage({
           </Link>
         }
       />
+
+      {assigned ? (
+        <p
+          role="status"
+          className={
+            assigned === "none"
+              ? "rounded-[var(--radius-card)] border border-(--status-warning-border) bg-(--status-warning-bg) px-4 py-3 text-sm text-warning"
+              : "rounded-[var(--radius-card)] border border-(--status-healthy-border) bg-(--status-healthy-bg) px-4 py-3 text-sm text-healthy"
+          }
+        >
+          {assigned === "none"
+            ? "Nothing was selected, so nothing changed."
+            : `${pluralize(Number(assigned), "resource")} reassigned.`}
+        </p>
+      ) : null}
 
       <ViewTabs
         tabs={VIEWS.map((v) => ({ ...v, count: counts[v.value] }))}
@@ -132,31 +169,73 @@ export default async function ResourcesPage({
         </p>
       ) : null}
 
-      <SectionCard
-        title={pluralize(resources.length, "resource")}
-        description={
-          billing.length > 0
-            ? `${money(visibleCost)} per month reported across ${pluralize(billing.length, "resource")} in this view. ${resources.length - billing.length} report no cost data.`
-            : "No resource in this view reports cost data."
-        }
-        bodyClassName=""
-      >
-        <ResourceTable
-          resources={resources}
-          lookups={lookups}
-          emptyTitle="No resources match this view"
-          emptyDescription={
-            search || provider !== "all"
-              ? "Try clearing the search or platform filter."
-              : "Once a platform is connected, discovered resources appear here."
+      <form action={assignSelectedAction} id={FORM_ID}>
+        <input type="hidden" name="returnTo" value={returnTo} />
+
+        <SectionCard
+          title={pluralize(resources.length, "resource")}
+          description={
+            billing.length > 0
+              ? `${money(visibleCost)} per month reported across ${pluralize(billing.length, "resource")} in this view. ${resources.length - billing.length} report no cost data.`
+              : "No resource in this view reports cost data."
           }
-          emptyAction={
-            <Link href="/resources" className="btn btn--sm">
-              Clear filters
-            </Link>
-          }
-        />
-      </SectionCard>
+          bodyClassName=""
+        >
+          {resources.length > 0 && projects.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+              <BulkSelection formId={FORM_ID} />
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="bulk-project" className="text-sm text-muted">
+                  Assign to
+                </label>
+                <select
+                  id="bulk-project"
+                  name="projectId"
+                  className="field w-auto py-1.5"
+                  defaultValue=""
+                >
+                  <option value="">No project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" className="btn btn--sm btn--primary">
+                  Assign selected
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <ResourceTable
+            resources={resources}
+            lookups={lookups}
+            selectable={resources.length > 0 && projects.length > 0}
+            emptyTitle="No resources match this view"
+            emptyDescription={
+              search || provider !== "all"
+                ? "Try clearing the search or platform filter."
+                : "Once a platform is connected, discovered resources appear here."
+            }
+            emptyAction={
+              <Link href="/resources" className="btn btn--sm">
+                Clear filters
+              </Link>
+            }
+          />
+        </SectionCard>
+      </form>
+
+      {projects.length === 0 && resources.length > 0 ? (
+        <p className="surface-inset max-w-[80ch] px-4 py-3 text-sm text-muted">
+          Create a project and you can assign these resources to it from here.{" "}
+          <Link href="/projects/new" className="text-text underline">
+            Create a project
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }
