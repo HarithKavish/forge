@@ -36,3 +36,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# scratch file used when writing long commit messages over ssh
+.commitmsg
