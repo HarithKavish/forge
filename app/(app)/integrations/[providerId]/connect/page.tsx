@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getProviderInfo } from "@/lib/data/queries";
-import { connectProviderAction } from "@/lib/data/connection-actions";
+import { requireSession } from "@/lib/auth/session";
+import { getProviderInfo, listAccountsForProvider } from "@/lib/data/queries";
+import { GITHUB_SCOPES } from "@/lib/providers/github/oauth";
 import { BackLink, Breadcrumbs, PageHeader, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
 import { ExternalIcon } from "@/components/ui/icons";
@@ -18,26 +19,37 @@ export async function generateMetadata({
   return { title: `Connect ${provider?.displayName ?? "integration"}` };
 }
 
-/**
- * The connection flow.
- *
- * There is deliberately no credential field on this page. A realistic-looking
- * secret input in a preview build invites someone to paste a live access key,
- * and there is nowhere safe for it to go yet — the encrypted credential path
- * exists in lib/crypto/secrets.ts but nothing is wired to it.
- *
- * So this page does the honest half of the job: it states exactly what will be
- * asked for, what Forge will read, and what it will never do. The action adds a
- * simulated account so the rest of the product stays navigable.
- */
+/** Plain-English descriptions of the OAuth scopes Forge requests. */
+const SCOPE_EXPLANATIONS: { scope: string; what: string; why: string }[] = [
+  {
+    scope: "repo",
+    what: "Read access to your repositories, including private ones.",
+    why: "Private repositories are invisible without it. GitHub's OAuth Apps have no read-only variant of this scope, so it also grants write — Forge only ever issues GET requests, but the grant itself is broader than what Forge uses.",
+  },
+  {
+    scope: "read:org",
+    what: "See which organisations you belong to.",
+    why: "Without it, repositories owned by an organisation do not appear.",
+  },
+  {
+    scope: "read:user",
+    what: "Read your public profile.",
+    why: "Used to label the connection with the account it belongs to.",
+  },
+];
+
 export default async function ConnectProviderPage({
   params,
 }: {
   params: Promise<{ providerId: string }>;
 }) {
   const { providerId } = await params;
+  const session = await requireSession();
+
   const provider = await getProviderInfo(providerId);
   if (!provider) notFound();
+
+  const existing = await listAccountsForProvider(session.workspaceId, providerId);
 
   return (
     <div className="mx-auto flex max-w-[44rem] flex-col gap-6">
@@ -55,95 +67,103 @@ export default async function ConnectProviderPage({
       <div className="flex items-center gap-3">
         <ProviderMark provider={provider.id} size="lg" />
         <PageHeader
-          eyebrow="Add an account"
+          eyebrow={existing.length > 0 ? "Add another account" : "Connect"}
           title={`Connect ${provider.displayName}`}
           description={provider.summary}
         />
       </div>
 
-      <SectionCard title="What Forge will ask for">
-        <dl className="flex flex-col gap-3">
-          <div>
-            <dt className="text-[0.82rem] text-muted">Credential type</dt>
-            <dd className="mt-0.5 text-[0.92rem] font-[650]">{provider.credentialKind}</dd>
-          </div>
-          <div>
-            <dt className="text-[0.82rem] text-muted">Access level</dt>
-            <dd className="mt-0.5 text-[0.92rem] font-[650]">
-              Read-only. Forge never needs write access to do its job.
-            </dd>
-          </div>
-        </dl>
+      {provider.implemented ? (
+        <>
+          <SectionCard title="What Forge will be able to see">
+            <ul className="flex flex-col gap-3">
+              {SCOPE_EXPLANATIONS.map((item) => (
+                <li key={item.scope}>
+                  <p className="font-mono text-[0.82rem] font-[650]">{item.scope}</p>
+                  <p className="mt-0.5 text-sm">{item.what}</p>
+                  <p className="mt-0.5 text-[0.82rem] leading-relaxed text-muted">
+                    {item.why}
+                  </p>
+                </li>
+              ))}
+            </ul>
 
-        <ul className="mt-4 flex list-disc flex-col gap-1.5 pl-4 text-sm text-muted">
-          <li>The credential is encrypted before it is stored, and never returned by any API.</li>
-          <li>It is decrypted in memory only for the duration of a call to {provider.displayName}.</li>
-          <li>You can revoke it at any time by disconnecting the account.</li>
-          <li>
-            Forge reads. It does not stop, delete, resize or reconfigure anything
-            in your account.
-          </li>
-        </ul>
-      </SectionCard>
+            <div className="surface-inset mt-4 px-3.5 py-3">
+              <p className="eyebrow text-[0.68rem]">Requested scope string</p>
+              <p className="mt-1.5 font-mono text-[0.8rem] break-all text-muted">
+                {GITHUB_SCOPES}
+              </p>
+            </div>
+          </SectionCard>
 
-      <SectionCard title="Credential entry is disabled in this preview">
-        <p className="text-sm leading-relaxed text-muted">
-          The adapter for {provider.displayName} is not built yet, so there is
-          nothing to validate a credential against and no sync to run with it.
-          Rather than show a form that looks real and quietly discards what you
-          type — or worse, stores a live key somewhere it should not be — Forge
-          asks for nothing here.
-        </p>
-        <p className="mt-3 text-sm leading-relaxed text-muted">
-          You can add a simulated account to see how a connected platform
-          behaves. It discovers no resources, because nothing has actually run.
-        </p>
+          <SectionCard title="What happens to the token">
+            <ul className="flex list-disc flex-col gap-2 pl-4 text-sm text-muted">
+              <li>
+                Encrypted with AES-256-GCM before it is stored, and bound to this
+                connection so it cannot be reused elsewhere.
+              </li>
+              <li>
+                Decrypted in memory only while Forge is talking to{" "}
+                {provider.displayName}. It is never logged, never returned by an
+                API, and never reaches your browser.
+              </li>
+              <li>
+                Revoked the moment you disconnect — and revocable from{" "}
+                {provider.displayName} at any time, independently of Forge.
+              </li>
+              <li>
+                Forge reads. It does not create, modify, or delete anything in
+                your account.
+              </li>
+            </ul>
 
-        <form action={connectProviderAction} className="mt-4 flex flex-col gap-3">
-          <input type="hidden" name="provider" value={provider.id} />
-          <div>
-            <label className="label" htmlFor="displayName">
-              Account label <span className="font-normal text-muted">(optional)</span>
-            </label>
-            <input
-              id="displayName"
-              name="displayName"
-              className="field"
-              placeholder={`${provider.displayName} — personal`}
-              maxLength={48}
-            />
-            <p className="mt-1.5 text-[0.8rem] text-muted">
-              How this account is named in Forge. Not a credential.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button type="submit" className="btn btn--primary">
-              Add simulated account
-            </button>
-            <Link href={`/integrations/${provider.id}`} className="btn btn--ghost">
-              Cancel
+            <div className="mt-5 flex flex-wrap gap-2">
+              {/*
+                A link rather than a form: the start route only sets a state
+                cookie and redirects, so there is nothing to protect against
+                double submission.
+              */}
+              <Link
+                href={`/api/integrations/github/start?next=${encodeURIComponent(`/integrations/${provider.id}`)}`}
+                className="btn btn--primary"
+                prefetch={false}
+              >
+                <ExternalIcon size={15} />
+                Continue to {provider.displayName}
+              </Link>
+              <Link href={`/integrations/${provider.id}`} className="btn btn--ghost">
+                Cancel
+              </Link>
+            </div>
+          </SectionCard>
+        </>
+      ) : (
+        <SectionCard title="Not available yet">
+          <p className="text-sm leading-relaxed text-muted">
+            The {provider.displayName} adapter has not been built, so there is
+            nothing to authenticate against and no inventory to discover. Forge
+            will not ask for credentials it cannot yet use.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-muted">
+            When it lands, connecting will need a{" "}
+            {provider.credentialKind.toLowerCase()}.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/integrations" className="btn">
+              Back to integrations
             </Link>
+            <a
+              href={provider.consoleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn--ghost"
+            >
+              <ExternalIcon size={15} />
+              Open {provider.displayName} console
+            </a>
           </div>
-        </form>
-      </SectionCard>
-
-      <SectionCard title="Prepare on the platform side">
-        <p className="text-sm leading-relaxed text-muted">
-          When the adapter lands you will need a {provider.credentialKind.toLowerCase()}{" "}
-          from {provider.displayName}. Creating it ahead of time does no harm —
-          it grants read access only.
-        </p>
-        <a
-          href={provider.consoleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn--sm mt-3"
-        >
-          <ExternalIcon size={15} />
-          Open {provider.displayName} console
-        </a>
-      </SectionCard>
+        </SectionCard>
+      )}
     </div>
   );
 }

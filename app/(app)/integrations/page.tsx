@@ -72,10 +72,10 @@ export default async function IntegrationsPage() {
       />
 
       <p className="surface-inset max-w-[80ch] px-4 py-3 text-sm text-muted">
-        Provider adapters are not wired up in this preview, so the accounts
-        below are demo connections and the inventory they appear to have
-        discovered is sample data. Forge will not ask for real provider
-        credentials until the encrypted credential path is connected end to end.
+        GitHub is live — connecting it reads your real repositories. The other
+        platforms are listed so the shape of the product is visible, but their
+        adapters are not built, and Forge will not ask for credentials it cannot
+        yet use.
       </p>
 
       <SectionCard
@@ -136,13 +136,17 @@ export default async function IntegrationsPage() {
             <div className="flex flex-wrap items-center gap-1.5">
               {capabilityPills(row.provider)}
             </div>
-            <div className="mt-auto flex gap-2">
-              <Link
-                href={`/integrations/${row.provider.id}/connect`}
-                className="btn btn--sm btn--primary"
-              >
-                Connect
-              </Link>
+            <div className="mt-auto flex items-center gap-2">
+              {row.provider.implemented ? (
+                <Link
+                  href={`/integrations/${row.provider.id}/connect`}
+                  className="btn btn--sm btn--primary"
+                >
+                  Connect
+                </Link>
+              ) : (
+                <span className="pill pill--plain">Adapter not built yet</span>
+              )}
               <Link href={`/integrations/${row.provider.id}`} className="btn btn--sm">
                 Details
               </Link>

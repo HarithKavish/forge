@@ -1,23 +1,58 @@
 /**
  * Provider catalogue.
  *
- * Mirrors what lib/providers/registry.ts will serve once adapters exist. The
- * capability flags are the real ones for each platform, not a uniform set —
- * GitHub genuinely cannot report infrastructure cost, and the UI is built to
- * show "not supported" rather than an empty number.
+ * Two kinds of entry, and the difference is visible in the UI rather than
+ * glossed over: providers with a registered adapter can actually be connected;
+ * the rest are planned, and say so.
+ *
+ * `capabilities` for an implemented provider comes from the adapter itself, so
+ * the catalogue cannot drift from what the code can really do.
  */
 
-import type { ProviderInfo } from "@/lib/data/types";
+import { getAdapter } from "./registry";
+import type { ProviderCapabilities } from "./types";
 
-export const PROVIDERS: ProviderInfo[] = [
+export interface ProviderInfo {
+  id: string;
+  displayName: string;
+  category: "cloud" | "source" | "database" | "edge" | "platform";
+  summary: string;
+  capabilities: ProviderCapabilities;
+  /** What Forge asks for when connecting. */
+  credentialKind: string;
+  consoleUrl: string;
+  /** True when an adapter is registered and the provider can be connected. */
+  implemented: boolean;
+}
+
+const NO_CAPABILITIES: ProviderCapabilities = {
+  resourceDiscovery: false,
+  resourceStatus: false,
+  activity: false,
+  cost: false,
+  managementUrl: false,
+};
+
+/** Planned providers declare what they *will* support once built. */
+interface CatalogueEntry {
+  id: string;
+  displayName: string;
+  category: ProviderInfo["category"];
+  summary: string;
+  credentialKind: string;
+  consoleUrl: string;
+  plannedCapabilities: ProviderCapabilities;
+}
+
+const ENTRIES: CatalogueEntry[] = [
   {
     id: "github",
     displayName: "GitHub",
     category: "source",
-    summary: "Repositories, deployments and commit activity.",
-    credentialKind: "Fine-grained personal access token (read-only)",
+    summary: "Repositories, visibility, and commit activity.",
+    credentialKind: "OAuth — you authorise Forge, no token to paste",
     consoleUrl: "https://github.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -30,9 +65,9 @@ export const PROVIDERS: ProviderInfo[] = [
     displayName: "AWS",
     category: "cloud",
     summary: "EC2, S3, RDS, Lambda, EBS volumes and load balancers.",
-    credentialKind: "Cross-account IAM role (read-only) or access key pair",
+    credentialKind: "Cross-account IAM role (read-only)",
     consoleUrl: "https://console.aws.amazon.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -47,7 +82,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: "Clusters, databases and connection activity.",
     credentialKind: "Atlas API key pair (Project Read Only)",
     consoleUrl: "https://cloud.mongodb.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -62,7 +97,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: "Zones, DNS records, workers and R2 buckets.",
     credentialKind: "API token scoped to zone read",
     consoleUrl: "https://dash.cloudflare.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -78,7 +113,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: "Projects, deployments and domains.",
     credentialKind: "Vercel access token",
     consoleUrl: "https://vercel.com/dashboard",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -94,7 +129,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: "Virtual machines, storage accounts and app services.",
     credentialKind: "Service principal with Reader role",
     consoleUrl: "https://portal.azure.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: true,
@@ -109,7 +144,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary: "Compute instances, block volumes and object storage.",
     credentialKind: "API signing key",
     consoleUrl: "https://cloud.oracle.com",
-    capabilities: {
+    plannedCapabilities: {
       resourceDiscovery: true,
       resourceStatus: true,
       activity: false,
@@ -118,6 +153,26 @@ export const PROVIDERS: ProviderInfo[] = [
     },
   },
 ];
+
+function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
+  const adapter = getAdapter(entry.id);
+  return {
+    id: entry.id,
+    displayName: entry.displayName,
+    category: entry.category,
+    summary: entry.summary,
+    credentialKind: entry.credentialKind,
+    consoleUrl: entry.consoleUrl,
+    implemented: Boolean(adapter),
+    // A registered adapter is the authority on its own capabilities. Planned
+    // entries advertise intent, and are labelled as planned in the UI.
+    capabilities: adapter
+      ? adapter.capabilities
+      : (entry.plannedCapabilities ?? NO_CAPABILITIES),
+  };
+}
+
+export const PROVIDERS: ProviderInfo[] = ENTRIES.map(toProviderInfo);
 
 const BY_ID = new Map(PROVIDERS.map((p) => [p.id, p]));
 

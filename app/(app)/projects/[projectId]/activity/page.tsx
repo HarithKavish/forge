@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getProject, listResources } from "@/lib/data/queries";
 import { absoluteDate, relativeTime, resourceTypeLabel } from "@/lib/format";
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 import { EmptyState, SectionCard } from "@/components/ui/page";
 import { ActivityBadge, StatusDot } from "@/components/ui/status";
 import { ProviderMark } from "@/components/ui/provider-mark";

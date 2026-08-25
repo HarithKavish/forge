@@ -79,23 +79,6 @@ function NavList({
   );
 }
 
-/**
- * Standing reminder that nothing here came from a real provider. It stays
- * visible rather than being dismissible, because every number on screen is
- * demo data until the adapters are connected.
- */
-function DemoNotice() {
-  return (
-    <Link
-      href="/integrations"
-      className="pill pill--syncing w-full justify-center normal-case"
-      title="No provider is connected yet — the inventory below is demo data"
-    >
-      Demo data
-    </Link>
-  );
-}
-
 function SessionPanel({ session }: { session: ForgeSession }) {
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-3">
@@ -178,10 +161,7 @@ export function AppNav({
 
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-[262px] flex-none flex-col gap-5 border-r border-border bg-(--chrome-bg) px-4 py-5 backdrop-blur-xl lg:flex">
-        <div className="flex flex-col gap-3">
-          <Brand workspaceName={session.workspaceName} />
-          <DemoNotice />
-        </div>
+        <Brand workspaceName={session.workspaceName} />
         <nav aria-label="Primary" className="flex-1">
           <NavList items={primary} pathname={pathname} />
           <p className="eyebrow mt-6 mb-2 px-3 text-[0.68rem]">Workspace</p>

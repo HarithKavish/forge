@@ -1,18 +1,29 @@
 "use server";
 
 /**
- * Inventory actions.
+ * Inventory and integration actions.
  *
- * Deliberately limited to organizing what Forge already knows about — assign,
- * ignore, archive. Nothing here touches a provider. Forge does not delete,
- * stop or modify infrastructure; the only route to a destructive action is the
- * link out to the platform's own console.
+ * Limited to organising what Forge already knows about — assign, ignore,
+ * archive, create, disconnect. Nothing here changes anything at a provider.
+ * Forge does not stop, delete or reconfigure infrastructure; the only route to
+ * a destructive action is the link out to the platform's own console.
  */
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { addCreatedProject, clearOverrides, mergeOverride } from "./overrides";
+import { requireSession } from "@/lib/auth/session";
+import {
+  deleteConnectedAccount,
+  getConnectedAccount,
+} from "@/lib/core/connected-accounts";
+import { createProject } from "@/lib/core/projects";
+import {
+  assignResource,
+  setResourceIgnored,
+  setResourcePresence,
+} from "@/lib/core/resources";
+import { runDiscovery } from "@/lib/sync/discover";
 
 export interface ProjectFormState {
   error?: string;
@@ -24,36 +35,44 @@ function revalidateInventory(): void {
   revalidatePath("/projects");
   revalidatePath("/resources");
   revalidatePath("/alerts");
+  revalidatePath("/integrations");
 }
 
+/* -------------------------------------------------------------------------- */
+/* Resources                                                                   */
+/* -------------------------------------------------------------------------- */
+
 export async function assignResourceAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
   const resourceId = String(formData.get("resourceId") ?? "");
   if (!resourceId) redirect("/resources");
 
-  const projectId = String(formData.get("projectId") ?? "");
-  const environmentId = String(formData.get("environmentId") ?? "");
-  const serviceId = String(formData.get("serviceId") ?? "");
+  const value = (key: string) => {
+    const raw = String(formData.get(key) ?? "");
+    // Empty string is the "not set" option, stored as null.
+    return raw === "" ? null : raw;
+  };
 
-  await mergeOverride(resourceId, {
-    // Empty string is the "no project" option, stored as an explicit null so it
-    // overrides the seed rather than falling through to it.
-    projectId: projectId || null,
-    environmentId: environmentId || null,
-    serviceId: serviceId || null,
+  await assignResource(session.workspaceId, resourceId, {
+    projectId: value("projectId"),
+    environmentId: value("environmentId"),
+    serviceId: value("serviceId"),
   });
 
   revalidateInventory();
   redirect(`/resources/${resourceId}`);
 }
 
-/** Keeps the resource in the inventory but stops it raising attention items. */
 export async function setIgnoredAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
   const resourceId = String(formData.get("resourceId") ?? "");
   if (!resourceId) redirect("/resources");
 
-  await mergeOverride(resourceId, {
-    ignored: String(formData.get("ignored") ?? "") === "true",
-  });
+  await setResourceIgnored(
+    session.workspaceId,
+    resourceId,
+    String(formData.get("ignored") ?? "") === "true",
+  );
 
   revalidateInventory();
   redirect(`/resources/${resourceId}`);
@@ -61,54 +80,74 @@ export async function setIgnoredAction(formData: FormData): Promise<void> {
 
 /** Marks a resource retired in Forge. It is never touched at the provider. */
 export async function setArchivedAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
   const resourceId = String(formData.get("resourceId") ?? "");
   if (!resourceId) redirect("/resources");
 
-  await mergeOverride(resourceId, {
-    archived: String(formData.get("archived") ?? "") === "true",
-  });
+  const archived = String(formData.get("archived") ?? "") === "true";
+  await setResourcePresence(session.workspaceId, resourceId, archived ? "archived" : "live");
 
   revalidateInventory();
   redirect(`/resources/${resourceId}`);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Projects                                                                    */
+/* -------------------------------------------------------------------------- */
+
 export async function createProjectAction(
   _prev: ProjectFormState,
   formData: FormData,
 ): Promise<ProjectFormState> {
+  const session = await requireSession();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
 
-  if (name.length < 2) {
-    return { error: "Give the project a name of at least 2 characters." };
-  }
-  if (name.length > 60) {
-    return { error: "Project names are limited to 60 characters." };
-  }
+  if (name.length < 2) return { error: "Give the project a name of at least 2 characters." };
+  if (name.length > 60) return { error: "Project names are limited to 60 characters." };
 
-  const slug =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "project";
-
-  const id = `prj_new_${Date.now().toString(36)}`;
-
-  await addCreatedProject({
-    id,
-    name,
-    slug,
-    description: description || "No description yet.",
-    createdAt: new Date().toISOString(),
-  });
+  const project = await createProject(session.workspaceId, { name, description });
 
   revalidateInventory();
-  redirect(`/projects/${id}`);
+  redirect(`/projects/${project.id}`);
 }
 
-/** Drops every local edit and returns the demo inventory to its seed state. */
-export async function resetDemoAction(): Promise<void> {
-  await clearOverrides();
+/* -------------------------------------------------------------------------- */
+/* Integrations                                                                */
+/* -------------------------------------------------------------------------- */
+
+/** Re-runs discovery for one connected account, on demand. */
+export async function syncAccountAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const accountId = String(formData.get("accountId") ?? "");
+  const provider = String(formData.get("provider") ?? "");
+  if (!accountId) redirect("/integrations");
+
+  const account = await getConnectedAccount(session.workspaceId, accountId);
+  if (account) {
+    await runDiscovery(session.workspaceId, {
+      id: account.id,
+      provider: account.provider,
+      settings: account.settings,
+    });
+  }
+
   revalidateInventory();
-  redirect("/settings/preferences");
+  redirect(`/integrations/${provider || account?.provider || ""}?synced=1`);
+}
+
+/**
+ * Disconnects an account: the stored credential is destroyed and its resources
+ * go with it. Inventory Forge can no longer verify is worse than none.
+ */
+export async function disconnectAccountAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const accountId = String(formData.get("accountId") ?? "");
+  const provider = String(formData.get("provider") ?? "");
+  if (!accountId) redirect("/integrations");
+
+  await deleteConnectedAccount(session.workspaceId, accountId);
+
+  revalidateInventory();
+  redirect(provider ? `/integrations/${provider}?disconnected=1` : "/integrations");
 }

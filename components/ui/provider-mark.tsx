@@ -6,7 +6,7 @@
  * legible at the sizes the inventory table needs.
  */
 
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 
 const CODES: Record<string, string> = {
   github: "GH",

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getProject, listResources, listServices } from "@/lib/data/queries";
 import { pluralize, relativeTime, resourceTypeLabel } from "@/lib/format";
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 import { EmptyState, SectionCard } from "@/components/ui/page";
 import { ActivityBadge, StatusBadge, StatusDot } from "@/components/ui/status";
 import { ProviderMark } from "@/components/ui/provider-mark";
@@ -29,7 +29,7 @@ export default async function ProjectServicesPage({
   if (!project) notFound();
 
   const [services, resources] = await Promise.all([
-    listServices(projectId),
+    listServices(session.workspaceId, projectId),
     listResources(session.workspaceId, { projectId }),
   ]);
 

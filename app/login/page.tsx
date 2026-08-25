@@ -76,17 +76,9 @@ export default async function LoginPage({
             </p>
           </section>
 
-          {/*
-            Saying plainly which part is real. Sign-in genuinely authenticates
-            and creates a workspace; the inventory inside is still sample data
-            until provider integrations are connected.
-          */}
           <p className="mt-5 text-center text-[0.82rem] leading-relaxed text-muted">
-            <span className="pill pill--syncing mr-1.5 align-middle normal-case">
-              Preview
-            </span>
-            Sign-in is real. The projects and resources inside are sample data —
-            no cloud accounts are connected yet.
+            New here? Signing in creates your workspace. Forge starts empty —
+            connect a platform and it discovers what you already have.
           </p>
         </div>
       </main>

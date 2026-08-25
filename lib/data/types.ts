@@ -59,9 +59,11 @@ export interface ProviderInfo {
   category: "cloud" | "source" | "database" | "edge" | "platform";
   summary: string;
   capabilities: ProviderCapabilities;
-  /** What Forge would ask for when the real integration lands. */
+  /** What Forge asks for when connecting. */
   credentialKind: string;
   consoleUrl: string;
+  /** True when an adapter is registered and this provider can be connected. */
+  implemented: boolean;
 }
 
 export interface ConnectedAccount {
@@ -142,6 +144,8 @@ export interface Resource {
 
   managementUrl?: string;
   metadata?: Record<string, string>;
+  /** Set when the user chose to stop this resource raising attention items. */
+  ignoredAt?: string;
 }
 
 /** Derived attention item. Never stored — recomputed from the inventory. */

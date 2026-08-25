@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getProject, listResources } from "@/lib/data/queries";
 import { costAccuracyLabel, money, pluralize, resourceTypeLabel } from "@/lib/format";
-import { getProvider, providerName } from "@/lib/mock/providers";
+import { getProvider, providerName } from "@/lib/providers/catalogue";
 import { MetricTile, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
 

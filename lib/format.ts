@@ -1,13 +1,11 @@
 /**
  * Display formatting.
  *
- * Relative times are measured against the demo's fixed snapshot rather than
- * the wall clock, so server and client render the same string and the demo
- * keeps telling a coherent story. When real data lands, `NOW` becomes
- * `new Date()` and nothing else changes.
+ * Relative times are measured against the wall clock. These run in server
+ * components, so the string is produced once on the server and shipped as
+ * markup — there is no second client render to disagree with it.
  */
 
-import { SEED_NOW } from "@/lib/mock/seed";
 import type {
   ActivityState,
   CostAccuracy,
@@ -16,12 +14,10 @@ import type {
   SyncStatus,
 } from "@/lib/data/types";
 
-const NOW = SEED_NOW;
-
 export function relativeTime(iso: string | undefined, fallback = "Never"): string {
   if (!iso) return fallback;
 
-  const diffMs = NOW.getTime() - new Date(iso).getTime();
+  const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.round(diffMs / 60_000);
 
   if (minutes < 1) return "Just now";
@@ -42,7 +38,7 @@ export function relativeTime(iso: string | undefined, fallback = "Never"): strin
 /** Whole days, used where the copy needs a bare number ("63 days"). */
 export function daysSince(iso: string | undefined): number | undefined {
   if (!iso) return undefined;
-  return Math.floor((NOW.getTime() - new Date(iso).getTime()) / 86_400_000);
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 }
 
 export function absoluteDate(iso: string | undefined): string {

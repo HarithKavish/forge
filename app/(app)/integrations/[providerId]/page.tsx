@@ -8,7 +8,7 @@ import {
   listAccountsForProvider,
   listResources,
 } from "@/lib/data/queries";
-import { disconnectAccountAction } from "@/lib/data/connection-actions";
+import { disconnectAccountAction, syncAccountAction } from "@/lib/data/actions";
 import { absoluteDate, pluralize, relativeTime, resourceTypeLabel } from "@/lib/format";
 import {
   BackLink,
@@ -31,6 +31,18 @@ export async function generateMetadata({
   const provider = await getProviderInfo(providerId);
   return { title: provider?.displayName ?? "Integration" };
 }
+
+/** Reasons a connection attempt can fail, in language a user can act on. */
+const CONNECT_ERRORS: Record<string, string> = {
+  denied: "You cancelled the authorization, so nothing was connected.",
+  state_mismatch:
+    "That sign-in attempt could not be verified and was rejected. Start the connection again from this page.",
+  no_code: "The provider did not return an authorization code. Try again.",
+  exchange_failed:
+    "Forge could not exchange the authorization code for a token. Check the OAuth client configuration.",
+  not_configured:
+    "Forge has no OAuth client configured for this provider. This is a server-side setting.",
+};
 
 const CAPABILITY_COPY: {
   key: "resourceDiscovery" | "resourceStatus" | "activity" | "cost" | "managementUrl";
@@ -75,10 +87,17 @@ export default async function IntegrationDetailPage({
   searchParams,
 }: {
   params: Promise<{ providerId: string }>;
-  searchParams: Promise<{ connected?: string }>;
+  searchParams: Promise<{
+    connected?: string;
+    found?: string;
+    sync_error?: string;
+    error?: string;
+    synced?: string;
+    disconnected?: string;
+  }>;
 }) {
   const { providerId } = await params;
-  const { connected } = await searchParams;
+  const { connected, found, sync_error: syncError, error: errorCode } = await searchParams;
   const session = await requireSession();
 
   const provider = await getProviderInfo(providerId);
@@ -139,8 +158,24 @@ export default async function IntegrationDetailPage({
           role="status"
           className="rounded-[var(--radius-card)] border border-(--status-healthy-border) bg-(--status-healthy-bg) px-4 py-3 text-sm text-healthy"
         >
-          Simulated account added. No credential was requested or stored, and no
-          resources were discovered — a real adapter is needed for that.
+          Connected. {found ? `${found} resources discovered.` : "Discovery has run."}
+        </p>
+      ) : null}
+      {syncError ? (
+        <p
+          role="alert"
+          className="rounded-[var(--radius-card)] border border-(--status-warning-border) bg-(--status-warning-bg) px-4 py-3 text-sm text-warning"
+        >
+          The account was connected, but the first discovery run failed. The
+          reason is shown against the account below.
+        </p>
+      ) : null}
+      {errorCode ? (
+        <p
+          role="alert"
+          className="rounded-[var(--radius-card)] border border-(--status-error-border) bg-(--status-error-bg) px-4 py-3 text-sm text-error"
+        >
+          {CONNECT_ERRORS[errorCode] ?? "Connecting failed. Please try again."}
         </p>
       ) : null}
 
@@ -221,15 +256,25 @@ export default async function IntegrationDetailPage({
                     ) : null}
                   </dl>
 
-                  <form action={disconnectAccountAction} className="mt-3">
-                    <input type="hidden" name="accountId" value={account.id} />
-                    <input type="hidden" name="provider" value={provider.id} />
-                    <button type="submit" className="btn btn--sm btn--danger">
-                      Disconnect
-                    </button>
-                  </form>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <form action={syncAccountAction}>
+                      <input type="hidden" name="accountId" value={account.id} />
+                      <input type="hidden" name="provider" value={provider.id} />
+                      <button type="submit" className="btn btn--sm">
+                        Synchronize now
+                      </button>
+                    </form>
+                    <form action={disconnectAccountAction}>
+                      <input type="hidden" name="accountId" value={account.id} />
+                      <input type="hidden" name="provider" value={provider.id} />
+                      <button type="submit" className="btn btn--sm btn--danger">
+                        Disconnect
+                      </button>
+                    </form>
+                  </div>
                   <p className="mt-1.5 text-[0.78rem] text-muted">
-                    Removes the account from Forge. Nothing at{" "}
+                    Disconnecting destroys the stored token and removes this
+                    account&rsquo;s resources from Forge. Nothing at{" "}
                     {provider.displayName} is changed.
                   </p>
                 </div>

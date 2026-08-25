@@ -10,6 +10,7 @@
  * lib/core/ changes.
  */
 
+import { githubAdapter } from "./github/adapter";
 import type { ProviderAdapter, ProviderCapabilities } from "./types";
 
 // Adapters are registered as they are implemented. GitHub, AWS, then MongoDB
@@ -23,6 +24,8 @@ function register<T>(adapter: ProviderAdapter<T>): void {
   }
   adapters.set(adapter.id, adapter as ProviderAdapter<never>);
 }
+
+register(githubAdapter);
 
 /** Look up an adapter, or undefined for a provider slug Forge does not know. */
 export function getAdapter(providerId: string): ProviderAdapter<never> | undefined {

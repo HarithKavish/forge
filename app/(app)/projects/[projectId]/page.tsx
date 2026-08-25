@@ -10,7 +10,7 @@ import {
   listServices,
 } from "@/lib/data/queries";
 import { money, pluralize, relativeTime, resourceTypeLabel } from "@/lib/format";
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 import {
   MetricTile,
   ObservationInference,
@@ -37,8 +37,8 @@ export default async function ProjectOverviewPage({
   if (!project) notFound();
 
   const [services, environments, resources, alerts] = await Promise.all([
-    listServices(projectId),
-    listEnvironments(projectId),
+    listServices(session.workspaceId, projectId),
+    listEnvironments(session.workspaceId, projectId),
     listResources(session.workspaceId, { projectId }),
     listAlerts(session.workspaceId),
   ]);

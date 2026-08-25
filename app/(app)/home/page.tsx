@@ -9,7 +9,7 @@ import {
   listProjects,
 } from "@/lib/data/queries";
 import { money, pluralize, relativeTime } from "@/lib/format";
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 import { MetricTile, ObservationInference, PageHeader, SectionCard } from "@/components/ui/page";
 import { StatusBadge, SyncBadge } from "@/components/ui/status";
 import { ProviderMark } from "@/components/ui/provider-mark";

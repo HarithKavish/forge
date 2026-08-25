@@ -11,7 +11,6 @@ import {
   listProjectRecords,
 } from "@/lib/data/queries";
 import { getResource } from "@/lib/data/queries";
-import { getOverrides } from "@/lib/data/overrides";
 import { setArchivedAction, setIgnoredAction } from "@/lib/data/actions";
 import {
   absoluteDate,
@@ -21,7 +20,7 @@ import {
   relativeTime,
   resourceTypeLabel,
 } from "@/lib/format";
-import { getProvider, providerName } from "@/lib/mock/providers";
+import { getProvider, providerName } from "@/lib/providers/catalogue";
 import {
   BackLink,
   Breadcrumbs,
@@ -61,12 +60,11 @@ export default async function ResourceDetailPage({
   const resource = await getResource(session.workspaceId, resourceId);
   if (!resource) notFound();
 
-  const [account, projects, environments, services, overrides] = await Promise.all([
+  const [account, projects, environments, services] = await Promise.all([
     getConnectedAccount(session.workspaceId, resource.connectedAccountId),
     listProjectRecords(session.workspaceId),
     listAllEnvironments(session.workspaceId),
     listAllServices(session.workspaceId),
-    getOverrides(),
   ]);
 
   const project = resource.projectId
@@ -76,8 +74,7 @@ export default async function ResourceDetailPage({
   const environment = environments.find((e) => e.id === resource.environmentId);
   const service = services.find((s) => s.id === resource.serviceId);
   const provider = getProvider(resource.provider);
-  const override = overrides[resource.id];
-  const ignored = override?.ignored === true;
+  const ignored = Boolean(resource.ignoredAt);
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,10 +95,17 @@ export default async function ResourceDetailPage({
         description={resource.providerResourceId}
         actions={
           <>
-            <Link href={`/resources/${resource.id}/open`} className="btn btn--primary">
-              <ExternalIcon size={15} />
-              Open in {providerName(resource.provider)}
-            </Link>
+            {resource.managementUrl ? (
+              <a
+                href={resource.managementUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn--primary"
+              >
+                <ExternalIcon size={15} />
+                Open in {providerName(resource.provider)}
+              </a>
+            ) : null}
           </>
         }
       />

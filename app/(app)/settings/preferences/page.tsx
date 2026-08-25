@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { requireSession } from "@/lib/auth/session";
-import { getOverrides } from "@/lib/data/overrides";
-import { getConnectionState } from "@/lib/data/connections";
-import { resetDemoAction } from "@/lib/data/actions";
-import { pluralize } from "@/lib/format";
+import { getOverview, listConnectedAccounts } from "@/lib/data/queries";
+import { pluralize, relativeTime } from "@/lib/format";
 import { DetailRow, SectionCard } from "@/components/ui/page";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
@@ -13,17 +12,17 @@ export const metadata: Metadata = {
 };
 
 export default async function PreferencesSettingsPage() {
-  await requireSession();
-
-  const [overrides, connections] = await Promise.all([
-    getOverrides(),
-    getConnectionState(),
+  const session = await requireSession();
+  const [overview, accounts] = await Promise.all([
+    getOverview(session.workspaceId),
+    listConnectedAccounts(session.workspaceId),
   ]);
 
-  const edited = Object.keys(overrides).length;
-  const added = connections.added.length;
-  const removed = connections.removed.length;
-  const hasEdits = edited + added + removed > 0;
+  const lastSync = accounts
+    .map((a) => a.lastSyncAt)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+    .at(-1);
 
   return (
     <div className="flex flex-col gap-4">
@@ -37,40 +36,39 @@ export default async function PreferencesSettingsPage() {
       </SectionCard>
 
       <SectionCard
-        title="Demo data"
-        description="Changes you make in this preview are stored in your browser, not on a server."
+        title="Inventory"
+        description="Everything Forge currently knows about, read from your connected platforms."
       >
         <dl>
-          <DetailRow label="Resources edited">{edited}</DetailRow>
-          <DetailRow label="Accounts added">{added}</DetailRow>
-          <DetailRow label="Accounts disconnected">{removed}</DetailRow>
+          <DetailRow label="Connected platforms">{overview.connectedProviders}</DetailRow>
+          <DetailRow label="Resources discovered">{overview.resources}</DetailRow>
+          <DetailRow label="Unassociated">{overview.unassociatedResources}</DetailRow>
+          <DetailRow label="Last synchronization">
+            {relativeTime(lastSync, "Never")}
+          </DetailRow>
         </dl>
-
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Assigning a resource to a project, ignoring one, or connecting a
-          simulated account all persist so the product is genuinely testable.
-          They live in a cookie on this device and are invisible to anyone else.
+          Discovery runs when you connect a platform and whenever you press
+          Synchronize on an integration.{" "}
+          {accounts.length === 0
+            ? "Nothing is connected yet, so the inventory is empty."
+            : `${pluralize(accounts.length, "account")} connected.`}
         </p>
-
-        <form action={resetDemoAction} className="mt-4">
-          <button type="submit" className="btn" disabled={!hasEdits}>
-            {hasEdits
-              ? `Reset ${pluralize(edited + added + removed, "change")}`
-              : "No changes to reset"}
-          </button>
-        </form>
-        <p className="mt-1.5 text-[0.8rem] text-muted">
-          Returns the demo inventory to its original state.
-        </p>
+        <Link href="/integrations" className="btn btn--sm mt-3">
+          Manage integrations
+        </Link>
       </SectionCard>
 
       <SectionCard title="Not built yet">
         <p className="text-sm leading-relaxed text-muted">
-          Notification routing, synchronization frequency and the thresholds that
-          decide when a resource is called &ldquo;potentially unused&rdquo; all
-          need the sync engine running against real accounts before they mean
-          anything. They are left out rather than shown as controls with nothing
-          behind them.
+          Scheduled background synchronization, notification routing, and the
+          thresholds that decide when a resource is called &ldquo;potentially
+          unused&rdquo; are all still fixed in code. They are left out of this
+          screen rather than shown as controls with nothing behind them.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          For now a resource is called <em>recently inactive</em> after 30 days
+          without an observed signal, and <em>potentially unused</em> after 60.
         </p>
       </SectionCard>
     </div>

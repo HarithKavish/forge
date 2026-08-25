@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { money, pluralize, relativeTime } from "@/lib/format";
-import { providerName } from "@/lib/mock/providers";
+import { providerName } from "@/lib/providers/catalogue";
 import type { ProjectSummary } from "@/lib/data/types";
 import { StatusBadge } from "@/components/ui/status";
 import { ProviderMark } from "@/components/ui/provider-mark";
