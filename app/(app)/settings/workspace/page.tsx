@@ -47,7 +47,6 @@ export default async function WorkspaceSettingsPage() {
 
       <SectionCard
         title="Members"
-        description="Teams are not enabled yet."
       >
         <div className="surface-inset flex items-center gap-3 px-3.5 py-3">
           <span

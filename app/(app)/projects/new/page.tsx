@@ -22,7 +22,6 @@ export default function NewProjectPage() {
       <PageHeader
         eyebrow="Workspace"
         title="New project"
-        description="Start with a name. You will assign resources to it from the inventory."
       />
 
       <SectionCard>

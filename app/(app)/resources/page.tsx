@@ -34,16 +34,6 @@ const VIEWS: { label: string; value: ResourceView }[] = [
 
 const VIEW_VALUES = new Set(VIEWS.map((v) => v.value));
 
-/** Copy shown above each view, so the tab explains itself. */
-const VIEW_NOTES: Partial<Record<ResourceView, string>> = {
-  unassociated:
-    "These exist in a connected account but belong to no project. They are the resources most often forgotten — assigning them makes every other view more accurate.",
-  potentially_unused:
-    "Forge saw no meaningful activity for these. That is an observation about signals, not proof that a resource is unneeded — open one to see the evidence before acting.",
-  unhealthy: "The provider reports a degraded or failing state for these resources.",
-  recent: "Discovered in the last 45 days.",
-};
-
 const FORM_ID = "inventory-bulk-assign";
 
 /**
@@ -109,7 +99,6 @@ export default async function ResourcesPage({
       <PageHeader
         eyebrow="Inventory"
         title="Resources"
-        description="Everything Forge has discovered across your connected platforms, whether or not it belongs to a project."
         actions={
           <Link href="/integrations" className="btn">
             Connect a platform
@@ -162,12 +151,6 @@ export default async function ResourcesPage({
           ]}
         />
       </div>
-
-      {VIEW_NOTES[view] ? (
-        <p className="surface-inset max-w-[80ch] px-4 py-3 text-sm text-muted">
-          {VIEW_NOTES[view]}
-        </p>
-      ) : null}
 
       <form action={assignSelectedAction} id={FORM_ID}>
         <input type="hidden" name="returnTo" value={returnTo} />
@@ -226,16 +209,6 @@ export default async function ResourcesPage({
           />
         </SectionCard>
       </form>
-
-      {projects.length === 0 && resources.length > 0 ? (
-        <p className="surface-inset max-w-[80ch] px-4 py-3 text-sm text-muted">
-          Create a project and you can assign these resources to it from here.{" "}
-          <Link href="/projects/new" className="text-text underline">
-            Create a project
-          </Link>
-          .
-        </p>
-      ) : null}
     </div>
   );
 }

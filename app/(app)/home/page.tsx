@@ -51,7 +51,6 @@ export default async function HomePage() {
       <PageHeader
         eyebrow={session.workspaceName}
         title={`Welcome back, ${firstName}`}
-        description="Everything discovered across your connected platforms, organized by project."
         actions={
           <>
             <Link href="/integrations" className="btn">
@@ -202,7 +201,6 @@ export default async function HomePage() {
       {/* --- Platforms ----------------------------------------------------- */}
       <SectionCard
         title="Connected platforms"
-        description="Synchronization state for each connected account."
         actions={
           <Link href="/integrations" className="btn btn--sm">
             Manage

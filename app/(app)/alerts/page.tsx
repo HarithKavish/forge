@@ -66,19 +66,7 @@ export default async function AlertsPage({
       <PageHeader
         eyebrow="Workspace"
         title="Attention"
-        description="What Forge thinks is worth a decision, with the evidence behind it."
       />
-
-      <div className="surface-inset max-w-[80ch] px-4 py-3">
-        <p className="text-sm text-muted">
-          Forge separates{" "}
-          <span className="font-[650] text-text">what it observed</span> from{" "}
-          <span className="font-[650] text-text">what it infers</span>. Inactivity
-          is a measurement; &ldquo;no longer needed&rdquo; is a judgement Forge is
-          not in a position to make for you. Nothing here is acted on
-          automatically.
-        </p>
-      </div>
 
       <ViewTabs
         tabs={[

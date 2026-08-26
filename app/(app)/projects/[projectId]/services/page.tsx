@@ -40,7 +40,6 @@ export default async function ProjectServicesPage({
       <div className="surface-card">
         <EmptyState
           title="No services defined"
-          description="Services describe what this project is made of — a frontend, an API, a database — separately from the resources that implement them."
           action={
             <Link href={`/projects/${projectId}`} className="btn btn--sm">
               Back to overview

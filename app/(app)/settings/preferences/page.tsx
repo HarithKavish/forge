@@ -28,7 +28,6 @@ export default async function PreferencesSettingsPage() {
     <div className="flex flex-col gap-4">
       <SectionCard
         title="Appearance"
-        description="Follows your system setting until you choose otherwise."
       >
         <div className="max-w-56">
           <ThemeToggle />
@@ -37,7 +36,6 @@ export default async function PreferencesSettingsPage() {
 
       <SectionCard
         title="Inventory"
-        description="Everything Forge currently knows about, read from your connected platforms."
       >
         <dl>
           <DetailRow label="Connected platforms">{overview.connectedProviders}</DetailRow>

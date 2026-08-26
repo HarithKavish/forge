@@ -103,7 +103,6 @@ export default async function ProjectCostsPage({
 
       <SectionCard
         title="By resource"
-        description="Every figure carries the accuracy Forge can vouch for."
         bodyClassName=""
       >
         {billing.length === 0 ? (

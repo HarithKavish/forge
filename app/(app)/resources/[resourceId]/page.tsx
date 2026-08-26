@@ -125,7 +125,6 @@ export default async function ResourceDetailPage({
           {/* --- Activity: fact and inference kept apart ------------------- */}
           <SectionCard
             title="Activity"
-            description="What Forge observed, and what it concludes from that."
           >
             {resource.activityReason ? (
               <ObservationInference
@@ -191,7 +190,6 @@ export default async function ResourceDetailPage({
           {resource.metadata && Object.keys(resource.metadata).length > 0 ? (
             <SectionCard
               title="Provider details"
-              description="Kept as reported, outside Forge's core model."
             >
               <dl>
                 {Object.entries(resource.metadata).map(([key, value]) => (
@@ -277,7 +275,6 @@ export default async function ResourceDetailPage({
           {/* --- Organize -------------------------------------------------- */}
           <SectionCard
             title="Organize"
-            description="Forge never changes anything at the provider."
           >
             <div className="flex flex-col gap-2">
               <form action={setIgnoredAction}>

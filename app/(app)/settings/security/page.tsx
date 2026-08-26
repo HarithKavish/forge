@@ -30,7 +30,6 @@ export default async function SecuritySettingsPage() {
     <div className="flex flex-col gap-4">
       <SectionCard
         title="Session"
-        description="How this browser is signed in."
       >
         <dl>
           <DetailRow label="Method">
@@ -57,7 +56,6 @@ export default async function SecuritySettingsPage() {
 
       <SectionCard
         title="Credential handling"
-        description="How provider secrets will be stored once integrations are live."
       >
         <ul className="flex list-disc flex-col gap-2 pl-4 text-sm text-muted">
           <li>

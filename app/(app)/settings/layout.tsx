@@ -11,7 +11,6 @@ export default function SettingsLayout({
       <PageHeader
         eyebrow="Workspace"
         title="Settings"
-        description="Your account, this workspace, and how Forge behaves."
       />
       <SettingsTabs />
       <div className="max-w-[52rem]">{children}</div>

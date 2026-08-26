@@ -43,7 +43,6 @@ export default async function ProjectActivityPage({
       <div className="surface-card">
         <EmptyState
           title="No activity to show"
-          description="Once resources are assigned to this project, their observed activity appears here."
           action={
             <Link href="/resources?view=unassociated" className="btn btn--sm">
               Assign resources
@@ -58,7 +57,6 @@ export default async function ProjectActivityPage({
     <div className="flex flex-col gap-4">
       <SectionCard
         title="Observed activity"
-        description="Most recently used first. These are measurements from each platform, not Forge's conclusions."
         bodyClassName="divide-y divide-(--border)"
       >
         {withSignal.map((resource) => (
@@ -94,7 +92,6 @@ export default async function ProjectActivityPage({
       {withoutSignal.length > 0 ? (
         <SectionCard
           title="No activity signal"
-          description="These platforms expose no usage signal for these resource types. Forge reports that rather than treating silence as disuse."
           bodyClassName="divide-y divide-(--border)"
         >
           {withoutSignal.map((resource) => (

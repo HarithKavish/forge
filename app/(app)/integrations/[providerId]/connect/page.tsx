@@ -56,34 +56,7 @@ export default async function ConnectProviderPage({
         />
       </div>
 
-      {!provider.implemented ? (
-        <SectionCard title="Not available yet">
-          <p className="text-sm leading-relaxed text-muted">
-            The {provider.displayName} adapter has not been built, so there is
-            nothing to authenticate against and no inventory to discover. Forge
-            will not ask for credentials it cannot yet use.
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-muted">
-            When it lands, connecting will need a{" "}
-            {provider.credentialKind.toLowerCase()}.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/integrations" className="btn">
-              Back to integrations
-            </Link>
-            <a
-              href={provider.consoleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn--ghost"
-            >
-              <ExternalIcon size={15} />
-              Open {provider.displayName} console
-            </a>
-          </div>
-        </SectionCard>
-      ) : (
-        <>
+      <>
           <SectionCard title="What Forge will be able to see">
             {provider.requiredScopes ? (
               <ul className="flex flex-col gap-1.5">
@@ -181,8 +154,7 @@ export default async function ConnectProviderPage({
               />
             </SectionCard>
           ) : null}
-        </>
-      )}
+      </>
     </div>
   );
 }

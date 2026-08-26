@@ -109,7 +109,6 @@ export default async function ProjectOverviewPage({
         {/* --- Services --------------------------------------------------- */}
         <SectionCard
           title="Services"
-          description="The logical parts of this project."
           actions={
             <Link href={`/projects/${projectId}/services`} className="btn btn--sm">
               Details
@@ -151,7 +150,6 @@ export default async function ProjectOverviewPage({
         {/* --- Resources by platform --------------------------------------- */}
         <SectionCard
           title="Resources by platform"
-          description="Where this project actually lives."
           actions={
             <Link href={`/projects/${projectId}/resources`} className="btn btn--sm">
               All resources
@@ -204,7 +202,7 @@ export default async function ProjectOverviewPage({
       </div>
 
       {/* --- Environments -------------------------------------------------- */}
-      <SectionCard title="Environments" description="Optional grouping within the project.">
+      <SectionCard title="Environments">
         {environments.length === 0 ? (
           <p className="text-sm text-muted">
             No environments defined. Resources can belong to this project without one.

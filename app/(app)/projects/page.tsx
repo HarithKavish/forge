@@ -45,7 +45,6 @@ export default async function ProjectsPage({
       <PageHeader
         eyebrow="Workspace"
         title="Projects"
-        description="Each project gathers the services and resources it is built on, wherever they live."
         actions={
           <Link href="/projects/new" className="btn btn--primary">
             <PlusIcon size={16} />

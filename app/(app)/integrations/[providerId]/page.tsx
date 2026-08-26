@@ -198,7 +198,6 @@ export default async function IntegrationDetailPage({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <SectionCard
           title="Accounts"
-          description="A workspace can hold several accounts for the same platform."
           bodyClassName="divide-y divide-(--border)"
         >
           {accounts.length === 0 ? (
@@ -286,7 +285,6 @@ export default async function IntegrationDetailPage({
         <div className="flex flex-col gap-4">
           <SectionCard
             title="Capabilities"
-            description="Declared by the adapter, so Forge never asks for what a platform cannot give."
           >
             <ul className="flex flex-col gap-3">
               {CAPABILITY_COPY.map((item) => {

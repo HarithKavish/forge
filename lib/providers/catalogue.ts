@@ -45,14 +45,6 @@ export interface ProviderInfo {
   caveat?: string;
 }
 
-const NO_CAPABILITIES: ProviderCapabilities = {
-  resourceDiscovery: false,
-  resourceStatus: false,
-  activity: false,
-  cost: false,
-  managementUrl: false,
-};
-
 interface CatalogueEntry {
   id: string;
   displayName: string;
@@ -65,7 +57,6 @@ interface CatalogueEntry {
   credentialFields?: CredentialField[];
   requiredScopes?: string[];
   caveat?: string;
-  plannedCapabilities: ProviderCapabilities;
 }
 
 const ENTRIES: CatalogueEntry[] = [
@@ -80,13 +71,6 @@ const ENTRIES: CatalogueEntry[] = [
     requiredScopes: ["repo", "read:org", "read:user"],
     caveat:
       "GitHub's OAuth Apps have no read-only variant of `repo`, so the grant includes write access even though Forge only ever issues GET requests.",
-    plannedCapabilities: {
-      resourceDiscovery: true,
-      resourceStatus: true,
-      activity: true,
-      cost: false,
-      managementUrl: true,
-    },
   },
   {
     id: "cloudflare",
@@ -124,7 +108,6 @@ const ENTRIES: CatalogueEntry[] = [
         help: "Only needed if the token can see more than one account. Forge uses the first otherwise.",
       },
     ],
-    plannedCapabilities: NO_CAPABILITIES,
   },
   {
     id: "vercel",
@@ -156,7 +139,6 @@ const ENTRIES: CatalogueEntry[] = [
         help: "Required to see a team's projects. Leave empty for a personal account.",
       },
     ],
-    plannedCapabilities: NO_CAPABILITIES,
   },
   {
     id: "neon",
@@ -180,76 +162,18 @@ const ENTRIES: CatalogueEntry[] = [
         help: "Console → Account settings → API keys → Create new.",
       },
     ],
-    plannedCapabilities: NO_CAPABILITIES,
-  },
-  {
-    id: "aws",
-    displayName: "AWS",
-    category: "cloud",
-    summary: "EC2, S3, RDS, Lambda, EBS volumes and load balancers.",
-    credentialKind: "Cross-account IAM role (read-only)",
-    consoleUrl: "https://console.aws.amazon.com",
-    connectMethod: "token",
-    plannedCapabilities: {
-      resourceDiscovery: true,
-      resourceStatus: true,
-      activity: true,
-      cost: true,
-      managementUrl: true,
-    },
-  },
-  {
-    id: "mongodb-atlas",
-    displayName: "MongoDB Atlas",
-    category: "database",
-    summary: "Clusters, databases and connection activity.",
-    credentialKind: "Atlas API key pair (Project Read Only)",
-    consoleUrl: "https://cloud.mongodb.com",
-    connectMethod: "token",
-    plannedCapabilities: {
-      resourceDiscovery: true,
-      resourceStatus: true,
-      activity: true,
-      cost: true,
-      managementUrl: true,
-    },
-  },
-  {
-    id: "azure",
-    displayName: "Azure",
-    category: "cloud",
-    summary: "Virtual machines, storage accounts and app services.",
-    credentialKind: "Service principal with Reader role",
-    consoleUrl: "https://portal.azure.com",
-    connectMethod: "token",
-    plannedCapabilities: {
-      resourceDiscovery: true,
-      resourceStatus: true,
-      activity: true,
-      cost: true,
-      managementUrl: true,
-    },
-  },
-  {
-    id: "oracle-cloud",
-    displayName: "Oracle Cloud",
-    category: "cloud",
-    summary: "Compute instances, block volumes and object storage.",
-    credentialKind: "API signing key",
-    consoleUrl: "https://cloud.oracle.com",
-    connectMethod: "token",
-    plannedCapabilities: {
-      resourceDiscovery: true,
-      resourceStatus: true,
-      activity: false,
-      cost: true,
-      managementUrl: true,
-    },
   },
 ];
 
 function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
+  // Every catalogue entry has a registered adapter — a provider Forge cannot
+  // actually connect to has no business being listed.
   const adapter = getAdapter(entry.id);
+  if (!adapter) {
+    throw new Error(
+      `Catalogue lists "${entry.id}" but no adapter is registered for it.`,
+    );
+  }
   return {
     id: entry.id,
     displayName: entry.displayName,
@@ -257,15 +181,15 @@ function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
     summary: entry.summary,
     credentialKind: entry.credentialKind,
     consoleUrl: entry.consoleUrl,
-    implemented: Boolean(adapter),
+    implemented: true,
     connectMethod: entry.connectMethod,
     credentialUrl: entry.credentialUrl,
     credentialFields: entry.credentialFields,
     requiredScopes: entry.requiredScopes,
     caveat: entry.caveat,
-    // A registered adapter is the authority on its own capabilities. Planned
-    // entries advertise intent, and are labelled as planned in the UI.
-    capabilities: adapter ? adapter.capabilities : entry.plannedCapabilities,
+    // The adapter is the authority on its own capabilities, so the catalogue
+    // cannot drift from what the code can really do.
+    capabilities: adapter.capabilities,
   };
 }
 

@@ -15,7 +15,6 @@ export default async function AccountSettingsPage() {
     <div className="flex flex-col gap-4">
       <SectionCard
         title="Account"
-        description="Who you are signed in as."
       >
         <dl>
           <DetailRow label="Name">{session.name}</DetailRow>

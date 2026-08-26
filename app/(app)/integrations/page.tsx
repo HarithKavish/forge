@@ -68,15 +68,7 @@ export default async function IntegrationsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Integrations"
-        description="Connect the platforms your projects run on. Forge reads from them — it never changes anything on your behalf."
       />
-
-      <p className="surface-inset max-w-[80ch] px-4 py-3 text-sm text-muted">
-        GitHub is live — connecting it reads your real repositories. The other
-        platforms are listed so the shape of the product is visible, but their
-        adapters are not built, and Forge will not ask for credentials it cannot
-        yet use.
-      </p>
 
       <SectionCard
         title="Connected"
@@ -121,7 +113,6 @@ export default async function IntegrationsPage() {
 
       <SectionCard
         title="Available"
-        description="Planned adapters. Each declares only the capabilities it can actually support."
         bodyClassName="grid gap-3 p-5 sm:grid-cols-2"
       >
         {available.map((row) => (
@@ -137,16 +128,12 @@ export default async function IntegrationsPage() {
               {capabilityPills(row.provider)}
             </div>
             <div className="mt-auto flex items-center gap-2">
-              {row.provider.implemented ? (
-                <Link
-                  href={`/integrations/${row.provider.id}/connect`}
-                  className="btn btn--sm btn--primary"
-                >
-                  Connect
-                </Link>
-              ) : (
-                <span className="pill pill--plain">Adapter not built yet</span>
-              )}
+              <Link
+                href={`/integrations/${row.provider.id}/connect`}
+                className="btn btn--sm btn--primary"
+              >
+                Connect
+              </Link>
               <Link href={`/integrations/${row.provider.id}`} className="btn btn--sm">
                 Details
               </Link>
@@ -157,7 +144,6 @@ export default async function IntegrationsPage() {
 
       <SectionCard
         title="Synchronization"
-        description="Every connected account, and the state of its last run."
         bodyClassName="divide-y divide-(--border)"
       >
         {accounts.length === 0 ? (
