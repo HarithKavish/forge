@@ -21,7 +21,7 @@ const API = "https://api.vercel.com";
 
 export const vercelCredentialSchema = z.object({
   accessToken: z.string().min(20, "A Vercel access token is longer than this"),
-  /** Required to see a team's projects; personal accounts leave it empty. */
+  /** Supplied by the installation: set when installed against a team. */
   teamId: z.string().optional(),
 });
 

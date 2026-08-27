@@ -41,6 +41,8 @@ export interface ProviderInfo {
   credentialFields?: CredentialField[];
   /** Read-only permissions the credential should be given, in the provider's own words. */
   requiredScopes?: string[];
+  /** Where the connect page sends the user to begin an OAuth flow. */
+  oauthStartPath?: string;
   /** Anything the user should know before granting. Shown, not buried. */
   caveat?: string;
 }
@@ -56,6 +58,7 @@ interface CatalogueEntry {
   credentialUrl?: string;
   credentialFields?: CredentialField[];
   requiredScopes?: string[];
+  oauthStartPath?: string;
   caveat?: string;
 }
 
@@ -68,6 +71,7 @@ const ENTRIES: CatalogueEntry[] = [
     credentialKind: "OAuth — you authorise Forge, no token to paste",
     consoleUrl: "https://github.com",
     connectMethod: "oauth",
+    oauthStartPath: "/api/integrations/github/start",
     requiredScopes: ["repo", "read:org", "read:user"],
     caveat:
       "GitHub's OAuth Apps have no read-only variant of `repo`, so the grant includes write access even though Forge only ever issues GET requests.",
@@ -89,7 +93,7 @@ const ENTRIES: CatalogueEntry[] = [
       "Account | Cloudflare Pages | Read",
     ],
     caveat:
-      "Cloudflare's tokens are genuinely fine-grained, so this connection can be read-only. Grant only the products you want discovered — Forge skips the ones the token cannot see rather than failing.",
+      "Cloudflare has no OAuth flow for third-party apps, so each person connects with their own API token. That is the trade-off for the best security story here: Cloudflare tokens are genuinely fine-grained, so this connection is properly read-only. Grant only the products you want discovered — Forge skips the ones the token cannot see rather than failing.",
     credentialFields: [
       {
         name: "apiToken",
@@ -114,31 +118,17 @@ const ENTRIES: CatalogueEntry[] = [
     displayName: "Vercel",
     category: "platform",
     summary: "Projects, production deployments and domains.",
-    credentialKind: "Access token",
+    credentialKind: "OAuth — you install the Forge integration, no token to paste",
     consoleUrl: "https://vercel.com/dashboard",
-    connectMethod: "token",
-    credentialUrl: "https://vercel.com/account/tokens",
-    requiredScopes: ["Read access to the account or team you want discovered"],
-    caveat:
-      "Vercel tokens are not scope-limited — a token carries the same rights you have. Set the shortest expiry you can live with, and scope it to one team rather than your whole account where possible.",
-    credentialFields: [
-      {
-        name: "accessToken",
-        label: "Access token",
-        secret: true,
-        required: true,
-        placeholder: "vercel_...",
-        help: "Account Settings → Tokens → Create.",
-      },
-      {
-        name: "teamId",
-        label: "Team ID",
-        secret: false,
-        required: false,
-        placeholder: "Optional — team_...",
-        help: "Required to see a team's projects. Leave empty for a personal account.",
-      },
+    connectMethod: "oauth",
+    oauthStartPath: "/api/integrations/vercel/start",
+    requiredScopes: [
+      "Projects: Read",
+      "Deployments: Read",
+      "Domains: Read",
     ],
+    caveat:
+      "You choose whether to install against your personal account or a specific team, and the connection only ever sees what you picked. Permissions are read-only.",
   },
   {
     id: "neon",
@@ -151,7 +141,7 @@ const ENTRIES: CatalogueEntry[] = [
     credentialUrl: "https://console.neon.tech/app/settings/api-keys",
     requiredScopes: ["Personal or organisation API key"],
     caveat:
-      "Neon API keys are not scope-limited — the key carries your own rights. Forge only issues GET requests, but the key itself can do more, so treat it accordingly.",
+      "Neon's OAuth is limited to approved partners, so each person connects with their own API key. Keys are not scope-limited — the key carries your own rights. Forge only issues GET requests, but the key itself can do more.",
     credentialFields: [
       {
         name: "apiKey",
@@ -174,19 +164,14 @@ function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
       `Catalogue lists "${entry.id}" but no adapter is registered for it.`,
     );
   }
+
+  // Spread rather than copying field by field. The hand-written version
+  // silently dropped `oauthStartPath` when it was added, which showed up as a
+  // missing button rather than an error — the whole class of bug is avoided by
+  // not restating the field list here.
   return {
-    id: entry.id,
-    displayName: entry.displayName,
-    category: entry.category,
-    summary: entry.summary,
-    credentialKind: entry.credentialKind,
-    consoleUrl: entry.consoleUrl,
+    ...entry,
     implemented: true,
-    connectMethod: entry.connectMethod,
-    credentialUrl: entry.credentialUrl,
-    credentialFields: entry.credentialFields,
-    requiredScopes: entry.requiredScopes,
-    caveat: entry.caveat,
     // The adapter is the authority on its own capabilities, so the catalogue
     // cannot drift from what the code can really do.
     capabilities: adapter.capabilities,

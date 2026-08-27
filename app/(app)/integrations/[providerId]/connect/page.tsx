@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 
 import { requireSession } from "@/lib/auth/session";
 import { getProviderInfo, listAccountsForProvider } from "@/lib/data/queries";
-import { GITHUB_SCOPES } from "@/lib/providers/github/oauth";
 import { BackLink, Breadcrumbs, PageHeader, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
 import { ExternalIcon } from "@/components/ui/icons";
@@ -68,14 +67,6 @@ export default async function ConnectProviderPage({
               </ul>
             ) : null}
 
-            {provider.connectMethod === "oauth" ? (
-              <div className="surface-inset mt-4 px-3.5 py-3">
-                <p className="eyebrow text-[0.68rem]">Requested scope string</p>
-                <p className="mt-1.5 font-mono text-[0.8rem] break-all text-muted">
-                  {GITHUB_SCOPES}
-                </p>
-              </div>
-            ) : null}
 
             {/*
               Stated up front rather than buried. Where a provider forces a
@@ -107,10 +98,10 @@ export default async function ConnectProviderPage({
               <li>Forge reads. It creates, modifies and deletes nothing.</li>
             </ul>
 
-            {provider.connectMethod === "oauth" ? (
+            {provider.connectMethod === "oauth" && provider.oauthStartPath ? (
               <div className="mt-5 flex flex-wrap gap-2">
                 <Link
-                  href={`/api/integrations/github/start?next=${encodeURIComponent(back)}`}
+                  href={`${provider.oauthStartPath}?next=${encodeURIComponent(back)}`}
                   className="btn btn--primary"
                   prefetch={false}
                 >

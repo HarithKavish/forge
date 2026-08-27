@@ -12,14 +12,11 @@
  * HttpOnly cookie, no token in any URL — are done explicitly below.
  */
 
-import { cookies } from "next/headers";
-import { randomBytes } from "node:crypto";
+import { beginOAuthState, consumeOAuthState } from "../oauth-state";
 
 const AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
 
-export const STATE_COOKIE = "forge.gh_oauth_state";
-const STATE_MAX_AGE = 60 * 10; // Ten minutes is ample for a consent screen.
 
 /**
  * `repo` is required to see private repositories. It is broad — GitHub has no
@@ -50,64 +47,28 @@ export function githubCallbackUrl(origin: string): string {
  *
  * The state is both a CSRF token and where to send the user afterwards, so a
  * forged callback cannot complete a connection and cannot choose the landing
- * page either.
+ * page either. See lib/providers/oauth-state.ts.
  */
 export async function beginGitHubAuthorization(
   origin: string,
   returnTo: string,
 ): Promise<string> {
   const { clientId } = githubOAuthConfig();
-  const nonce = randomBytes(32).toString("base64url");
-
-  const store = await cookies();
-  store.set(STATE_COOKIE, `${nonce}:${returnTo}`, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: STATE_MAX_AGE,
-  });
+  const nonce = await beginOAuthState("github", returnTo);
 
   const url = new URL(AUTHORIZE_URL);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", githubCallbackUrl(origin));
   url.searchParams.set("scope", GITHUB_SCOPES);
   url.searchParams.set("state", nonce);
-  // Force the account chooser so a second account can be connected.
   url.searchParams.set("allow_signup", "false");
 
   return url.toString();
 }
 
-export interface StateCheck {
-  ok: boolean;
-  returnTo: string;
-}
-
-/**
- * Verifies the state GitHub echoed back against the cookie, and consumes it.
- *
- * A single-use check: the cookie is cleared whether or not it matched, so a
- * replayed callback cannot succeed.
- */
-export async function consumeGitHubState(received: string | null): Promise<StateCheck> {
-  const store = await cookies();
-  const stored = store.get(STATE_COOKIE)?.value;
-  store.delete(STATE_COOKIE);
-
-  if (!stored || !received) return { ok: false, returnTo: "/integrations/github" };
-
-  const separator = stored.indexOf(":");
-  const nonce = separator === -1 ? stored : stored.slice(0, separator);
-  const returnTo = separator === -1 ? "/integrations/github" : stored.slice(separator + 1);
-
-  // Same-origin paths only; a stored absolute URL would be an open redirect.
-  const safeReturn =
-    returnTo.startsWith("/") && !returnTo.startsWith("//")
-      ? returnTo
-      : "/integrations/github";
-
-  return { ok: nonce === received, returnTo: safeReturn };
+/** Verifies and consumes the state GitHub echoed back. */
+export async function consumeGitHubState(received: string | null) {
+  return consumeOAuthState("github", received);
 }
 
 export interface GitHubTokenResponse {

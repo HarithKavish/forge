@@ -9,9 +9,27 @@ in the catalogue is listed so the shape of the product is visible, and is
 labelled *adapter not built yet* rather than being offered as a connect button
 that cannot work.
 
-GitHub connects over OAuth. The other three take an API token, entered on the
-connect page — Forge verifies it with the provider before storing anything, so a
-bad token is rejected without ever reaching the database.
+**GitHub and Vercel connect over OAuth** — each user authorises their own
+account, and nothing has to be pasted.
+
+**Cloudflare and Neon take an API token**, entered on the connect page. Not a
+design preference: neither offers OAuth that a third-party application can
+register for. Their authorize endpoints exist but reject any client id that is
+not pre-registered, and there is no self-serve registration:
+
+```
+GET https://dash.cloudflare.com/oauth2/auth?client_id=...
+  → error=invalid_client  (Client authentication failed — unknown client)
+
+GET https://oauth2.neon.tech/oauth2/auth?client_id=...
+  → error=invalid_client
+```
+
+Cloudflare's endpoint is the one Wrangler uses with a first-party client id;
+Neon's requires approval through their partner programme. Token entry is still
+per-user and multi-tenant — each person creates their own — and Forge verifies
+the token with the provider before storing anything, so a bad one is rejected
+without ever reaching the database.
 
 ---
 
@@ -192,8 +210,9 @@ fails with an auth error and the account is marked *needs re-auth*.
 **Credential:** API token, created at
 <https://dash.cloudflare.com/profile/api-tokens>.
 
-The best-behaved provider Forge talks to: Cloudflare's tokens are genuinely
-fine-grained, so this connection is properly read-only. Grant only the products
+Cloudflare has no OAuth for third-party apps, so each person creates their own
+token. That is the trade-off for the best security story here: Cloudflare's
+tokens are genuinely fine-grained, so this connection is properly read-only. Grant only the products
 you want discovered — Forge skips what the token cannot see rather than failing
 the run.
 
@@ -220,30 +239,56 @@ adapter does not use yet.
 
 ## Vercel
 
-**Credential:** access token from <https://vercel.com/account/tokens>.
+**Connects over OAuth**, via a Vercel *Integration*. You register the
+integration once; every user then installs it against their own account or team.
 
-> Vercel tokens are **not** scope-limited — a token carries the same rights you
-> have. Set the shortest expiry you can live with, and scope it to a single team
-> rather than your whole account where the option exists.
+### Creating the integration
 
-Add the **Team ID** field if you want a team's projects; leave it empty for a
-personal account. It is sent on every request, not just the first.
+<https://vercel.com/integrations/console> → **Create Integration**
+
+| Field | Value |
+|---|---|
+| Name | `Forge` |
+| Slug | `forge` (this becomes `VERCEL_INTEGRATION_SLUG`) |
+| Redirect URL | `https://forge.harithkavish.com/api/integrations/vercel/callback` |
+
+**Permissions** — read-only:
+
+| Scope | Access |
+|---|---|
+| Projects | Read |
+| Deployments | Read |
+| Domains | Read |
+
+Then copy the **Client ID** and **Client Secret**:
+
+```
+VERCEL_OAUTH_CLIENT_ID
+VERCEL_OAUTH_CLIENT_SECRET
+VERCEL_INTEGRATION_SLUG
+```
+
+Unlike a pasted token, permissions are fixed by the integration rather than by
+whoever creates the credential — so no user can accidentally grant Forge more
+than it needs. The installer chooses personal account or a specific team, and
+the connection only ever sees what they picked.
 
 **Discovers:** projects and domains.
 
 **Activity:** a project's latest **production deployment**. Not `updatedAt`,
 which moves when a setting changes. This makes Vercel one of the few providers
-where "potentially unused" can be said with confidence — a project nobody has
-deployed in months genuinely is idle.
+where "potentially unused" can be said with confidence.
 
 **Cost:** none. Billing is team-level, so there is no per-project figure.
+
 
 ---
 
 ## Neon
 
 **Credential:** API key from
-<https://console.neon.tech/app/settings/api-keys>.
+<https://console.neon.tech/app/settings/api-keys>. Neon's OAuth is limited to
+approved partners, so each person connects with their own key.
 
 > Neon API keys are **not** scope-limited either. Forge only issues GET
 > requests, but the key itself can do more.
@@ -266,7 +311,7 @@ cost model forbids. Usage appears in resource metadata instead.
 
 ## Credential entry
 
-Token providers share one form, driven by `credentialFields` in the catalogue,
+Token providers (Cloudflare, Neon) share one form, driven by `credentialFields` in the catalogue,
 so a new provider needs no new form code. The order of operations matters:
 
 ```
