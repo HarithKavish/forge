@@ -54,13 +54,13 @@ export async function beginGitHubAuthorization(
   returnTo: string,
 ): Promise<string> {
   const { clientId } = githubOAuthConfig();
-  const nonce = await beginOAuthState("github", returnTo);
+  const { state } = await beginOAuthState("github", returnTo);
 
   const url = new URL(AUTHORIZE_URL);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", githubCallbackUrl(origin));
   url.searchParams.set("scope", GITHUB_SCOPES);
-  url.searchParams.set("state", nonce);
+  url.searchParams.set("state", state);
   url.searchParams.set("allow_signup", "false");
 
   return url.toString();

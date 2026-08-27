@@ -9,27 +9,18 @@ in the catalogue is listed so the shape of the product is visible, and is
 labelled *adapter not built yet* rather than being offered as a connect button
 that cannot work.
 
-**GitHub and Vercel connect over OAuth** — each user authorises their own
-account, and nothing has to be pasted.
+**GitHub, Cloudflare and Vercel connect over OAuth** — each user authorises
+their own account, and nothing has to be pasted.
 
-**Cloudflare and Neon take an API token**, entered on the connect page. Not a
-design preference: neither offers OAuth that a third-party application can
-register for. Their authorize endpoints exist but reject any client id that is
-not pre-registered, and there is no self-serve registration:
+**Neon takes an API key**, entered on the connect page. Neon's OAuth is real and
+has a proper read-only scope (`urn:neoncloud:projects:read`), but registration
+requires a commercial partnership: *"We only provide OAuth integrations for
+partners we have active commercial relationships with."* Applying is the path if
+you want it; the adapter would not change, only how the credential is obtained.
 
-```
-GET https://dash.cloudflare.com/oauth2/auth?client_id=...
-  → error=invalid_client  (Client authentication failed — unknown client)
-
-GET https://oauth2.neon.tech/oauth2/auth?client_id=...
-  → error=invalid_client
-```
-
-Cloudflare's endpoint is the one Wrangler uses with a first-party client id;
-Neon's requires approval through their partner programme. Token entry is still
-per-user and multi-tenant — each person creates their own — and Forge verifies
-the token with the provider before storing anything, so a bad one is rejected
-without ever reaching the database.
+Token entry is still per-user and multi-tenant — each person creates their own —
+and Forge verifies the key with Neon before storing anything, so a bad one is
+rejected without ever reaching the database.
 
 ---
 
@@ -207,33 +198,61 @@ fails with an auth error and the account is marked *needs re-auth*.
 
 ## Cloudflare
 
-**Credential:** API token, created at
-<https://dash.cloudflare.com/profile/api-tokens>.
+**Connects over OAuth.** Cloudflare shipped self-managed OAuth clients in June
+2026, so Forge registers its own client and asks each user for scoped access —
+no token pasting, and no reuse of Wrangler's first-party client id.
 
-Cloudflare has no OAuth for third-party apps, so each person creates their own
-token. That is the trade-off for the best security story here: Cloudflare's
-tokens are genuinely fine-grained, so this connection is properly read-only. Grant only the products
-you want discovered — Forge skips what the token cannot see rather than failing
-the run.
+This is the best credential story of the four: Cloudflare's scopes are genuinely
+fine-grained, so the connection is properly read-only. Forge is granted exactly
+what it uses.
 
-| Permission | Needed for |
+### Creating the OAuth client
+
+Cloudflare dashboard → **Manage Account** → **OAuth clients** → **Create client**
+
+| Field | Value |
 |---|---|
-| Account · Account Settings · Read | identifying the account |
-| Zone · Zone · Read | zones |
-| Account · Workers Scripts · Read | Workers |
-| Account · Workers R2 Storage · Read | R2 buckets |
-| Account · Cloudflare Pages · Read | Pages projects |
+| Client name | `Forge` |
+| Grant type | Authorization code |
+| Redirect URL | `https://forge.harithkavish.com/api/integrations/cloudflare/callback` |
+
+**Scopes** — read-only. Scope names match Cloudflare API token permission names:
+
+- Account Settings: Read
+- Zone: Read
+- Workers Scripts: Read
+- Workers R2 Storage: Read
+- Cloudflare Pages: Read
+- `offline_access` — so the connection can refresh rather than expire
+
+Then:
+
+```
+CLOUDFLARE_OAUTH_CLIENT_ID
+CLOUDFLARE_OAUTH_CLIENT_SECRET
+CLOUDFLARE_OAUTH_SCOPES     # space-separated, matching the client
+```
+
+Scopes are configurable rather than hardcoded because the set a client may
+request is fixed when the client is registered — Forge mirrors whatever was
+chosen there instead of guessing at names.
+
+The endpoints (`dash.cloudflare.com/oauth2/auth` and `/oauth2/token`) are
+overridable via `CLOUDFLARE_OAUTH_AUTHORIZE_URL` / `CLOUDFLARE_OAUTH_TOKEN_URL`,
+since Cloudflare's OAuth guide does not publish them.
+
+PKCE (S256) is used on every request. The verifier is generated server-side and
+kept in the same HttpOnly cookie as the state, so it never reaches the browser.
 
 **Discovers:** zones, Workers, R2 buckets, Pages projects.
 
 **Activity:** only Pages projects have one — their latest deployment. Zones,
 Workers and R2 expose no usage signal over REST, and say so per resource rather
-than being reported as quiet. `modified_on` is deliberately *not* used as
-activity: it moves when configuration changes, which would make a dormant zone
-look busy. Real traffic figures need the GraphQL analytics API, which this
-adapter does not use yet.
+than being reported as quiet. `modified_on` is deliberately *not* used: it moves
+on configuration changes, which would make a dormant zone look busy.
 
 **Cost:** none. Cloudflare bills per account and plan, never per zone.
+
 
 ---
 

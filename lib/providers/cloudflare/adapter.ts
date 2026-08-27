@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { providerJson, unwrapCloudflare, type CloudflareEnvelope } from "../http";
 import { ProviderAuthError, ProviderError } from "../errors";
+import { refreshCloudflareToken } from "./oauth";
 import type {
   AccountIdentity,
   DiscoveredResource,
@@ -24,21 +25,40 @@ import type {
 
 const API = "https://api.cloudflare.com/client/v4";
 
-export const cloudflareCredentialSchema = z.object({
-  apiToken: z.string().min(20, "A Cloudflare API token is longer than this"),
-  /** Optional: pins the connection to one account when the token sees several. */
-  accountId: z.string().optional(),
-});
+/**
+ * Either an OAuth access token or a hand-created API token.
+ *
+ * Both are sent as a bearer token, so the adapter does not care which it holds
+ * — only the connect flow differs. Keeping the API-token shape valid means an
+ * existing connection keeps working if OAuth is ever unavailable.
+ */
+export const cloudflareCredentialSchema = z
+  .object({
+    accessToken: z.string().min(20).optional(),
+    refreshToken: z.string().optional(),
+    scope: z.string().optional(),
+    apiToken: z.string().min(20, "A Cloudflare API token is longer than this").optional(),
+    /** Optional: pins the connection to one account when the token sees several. */
+    accountId: z.string().optional(),
+  })
+  .refine((c) => Boolean(c.accessToken ?? c.apiToken), {
+    message: "An access token or API token is required",
+  });
 
 export type CloudflareCredentials = z.infer<typeof cloudflareCredentialSchema>;
 
 type Ctx = ProviderContext<CloudflareCredentials>;
 
+/** OAuth and API tokens are both bearer tokens; whichever is present wins. */
+function bearer(credentials: CloudflareCredentials): string {
+  return credentials.accessToken ?? credentials.apiToken ?? "";
+}
+
 function get<T>(ctx: Ctx, path: string): Promise<CloudflareEnvelope<T>> {
   return providerJson<CloudflareEnvelope<T>>({
     provider: "cloudflare",
     url: path.startsWith("http") ? path : API + path,
-    token: ctx.credentials.apiToken,
+    token: bearer(ctx.credentials),
     signal: ctx.signal,
   });
 }
@@ -125,16 +145,20 @@ export const cloudflareAdapter: ProviderAdapter<CloudflareCredentials> = {
   credentialSchema: cloudflareCredentialSchema,
 
   async authenticate(ctx) {
-    // Verify the token itself before anything else is attempted.
-    const result = unwrapCloudflare(
-      await get<{ id: string; status: string }>(ctx, "/user/tokens/verify"),
-      "cloudflare",
-    );
-    if (result.status !== "active") {
-      throw new ProviderAuthError(
-        `This Cloudflare token is ${result.status}.`,
+    // `/user/tokens/verify` describes API tokens only — an OAuth access token
+    // is not a token object and the call 4xxs. Listing accounts proves the
+    // credential works either way, so that is the check for both.
+    if (ctx.credentials.apiToken && !ctx.credentials.accessToken) {
+      const result = unwrapCloudflare(
+        await get<{ id: string; status: string }>(ctx, "/user/tokens/verify"),
         "cloudflare",
       );
+      if (result.status !== "active") {
+        throw new ProviderAuthError(
+          `This Cloudflare token is ${result.status}.`,
+          "cloudflare",
+        );
+      }
     }
 
     const account = await resolveAccount(ctx);
@@ -275,6 +299,28 @@ export const cloudflareAdapter: ProviderAdapter<CloudflareCredentials> = {
         },
       } satisfies DiscoveredResource;
     }
+  },
+
+  /** Only meaningful for an OAuth connection; API tokens do not expire. */
+  async refreshCredentials(credentials) {
+    if (!credentials.refreshToken) {
+      throw new ProviderAuthError(
+        "This Cloudflare connection has no refresh token. Reconnect the account.",
+        "cloudflare",
+      );
+    }
+
+    const token = await refreshCloudflareToken(credentials.refreshToken);
+    return {
+      credentials: {
+        ...credentials,
+        accessToken: token.accessToken,
+        // Rotated on use by most OAuth servers; keep whichever came back.
+        refreshToken: token.refreshToken ?? credentials.refreshToken,
+        scope: token.scope ?? credentials.scope,
+      },
+      expiresAt: token.expiresAt,
+    };
   },
 
   getManagementUrl(resource: ResourceRef) {

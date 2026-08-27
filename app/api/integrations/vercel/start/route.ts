@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   const returnTo = request.nextUrl.searchParams.get("next") ?? "/integrations/vercel";
 
   try {
-    const state = await beginOAuthState("vercel", returnTo);
+    const { state } = await beginOAuthState("vercel", returnTo);
     return NextResponse.redirect(vercelInstallUrl(state));
   } catch {
     // Missing client id, secret or slug. Say so on the page rather than
