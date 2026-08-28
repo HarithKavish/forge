@@ -45,9 +45,16 @@ export function cloudflareOAuthConfig(): CloudflareOAuthConfig {
     clientSecret,
     authorizeUrl: process.env.CLOUDFLARE_OAUTH_AUTHORIZE_URL ?? DEFAULT_AUTHORIZE_URL,
     tokenUrl: process.env.CLOUDFLARE_OAUTH_TOKEN_URL ?? DEFAULT_TOKEN_URL,
-    // `offline_access` asks for a refresh token; without it the connection dies
-    // when the access token expires and the user has to reconnect by hand.
-    scopes: process.env.CLOUDFLARE_OAUTH_SCOPES ?? "offline_access",
+    /**
+     * Empty is meaningful: OAuth servers grant the client's registered scopes
+     * when the authorize request omits `scope` entirely. That is the safer
+     * default than guessing at names — asking for a scope the client was not
+     * registered with is rejected outright.
+     *
+     * Set it to include `offline_access` once the names are known, so the
+     * connection can refresh rather than expiring and needing a manual reconnect.
+     */
+    scopes: process.env.CLOUDFLARE_OAUTH_SCOPES ?? "",
   };
 }
 
@@ -67,7 +74,11 @@ export function cloudflareAuthorizeUrl(
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", cloudflareCallbackUrl(origin));
-  url.searchParams.set("scope", config.scopes);
+  // Omitted entirely when unset, so Cloudflare falls back to whatever the
+  // client was registered with.
+  if (config.scopes.trim()) {
+    url.searchParams.set("scope", config.scopes.trim());
+  }
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
