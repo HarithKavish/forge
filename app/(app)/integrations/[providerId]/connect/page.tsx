@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireSession } from "@/lib/auth/session";
 import { getProviderInfo, listAccountsForProvider } from "@/lib/data/queries";
+import { missingEnvFor } from "@/lib/providers/catalogue";
 import { BackLink, Breadcrumbs, PageHeader, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
 import { ExternalIcon } from "@/components/ui/icons";
@@ -32,6 +33,7 @@ export default async function ConnectProviderPage({
 
   const existing = await listAccountsForProvider(session.workspaceId, providerId);
   const back = `/integrations/${provider.id}`;
+  const missingEnv = missingEnvFor(provider.id);
 
   return (
     <div className="mx-auto flex max-w-[44rem] flex-col gap-6">
@@ -99,19 +101,44 @@ export default async function ConnectProviderPage({
             </ul>
 
             {provider.connectMethod === "oauth" && provider.oauthStartPath ? (
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  href={`${provider.oauthStartPath}?next=${encodeURIComponent(back)}`}
-                  className="btn btn--primary"
-                  prefetch={false}
-                >
-                  <ExternalIcon size={15} />
-                  Continue to {provider.displayName}
-                </Link>
-                <Link href={back} className="btn btn--ghost">
-                  Cancel
-                </Link>
-              </div>
+              provider.configured ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Link
+                    href={`${provider.oauthStartPath}?next=${encodeURIComponent(back)}`}
+                    className="btn btn--primary"
+                    prefetch={false}
+                  >
+                    <ExternalIcon size={15} />
+                    Continue to {provider.displayName}
+                  </Link>
+                  <Link href={back} className="btn btn--ghost">
+                    Cancel
+                  </Link>
+                </div>
+              ) : (
+                /*
+                  Naming the missing variables rather than saying "a server-side
+                  setting". These are names, never values, and the person who can
+                  act on it is the one running Forge.
+                */
+                <div className="mt-5">
+                  <p className="rounded-[var(--radius-inner)] border border-(--status-warning-border) bg-(--status-warning-bg) px-3.5 py-3 text-[0.85rem] leading-relaxed text-warning">
+                    Forge has not been set up for {provider.displayName} on this
+                    deployment yet. Whoever runs it needs to register the app with{" "}
+                    {provider.displayName} and set{" "}
+                    {missingEnv.map((name, index) => (
+                      <span key={name}>
+                        {index > 0 ? ", " : ""}
+                        <code className="font-mono">{name}</code>
+                      </span>
+                    ))}
+                    .
+                  </p>
+                  <Link href={back} className="btn btn--ghost mt-3">
+                    Back
+                  </Link>
+                </div>
+              )
             ) : null}
           </SectionCard>
 

@@ -34,6 +34,15 @@ export interface ProviderInfo {
   consoleUrl: string;
   /** True when an adapter is registered and the provider can be connected. */
   implemented: boolean;
+  /**
+   * True when this deployment has the credentials the flow needs.
+   *
+   * An adapter can exist while the operator has not registered an app with the
+   * provider yet — offering Connect then would dead-end on the start route.
+   */
+  configured: boolean;
+  /** Env vars an operator must set. Shown to signed-in users, never secrets. */
+  requiredEnv?: string[];
   /** How a connection is established. */
   connectMethod: "oauth" | "token";
   /** Where to create the credential, for the connect page to link to. */
@@ -140,6 +149,33 @@ const ENTRIES: CatalogueEntry[] = [
   },
 ];
 
+/**
+ * Env each provider's connect flow needs. Names only — never values.
+ *
+ * Read per call rather than at module load: Next evaluates module scope during
+ * the build, where none of these exist, which would bake in "not configured".
+ */
+const REQUIRED_ENV: Record<string, string[]> = {
+  github: ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_PRIVATE_KEY"],
+  cloudflare: ["CLOUDFLARE_OAUTH_CLIENT_ID", "CLOUDFLARE_OAUTH_CLIENT_SECRET"],
+  vercel: [
+    "VERCEL_OAUTH_CLIENT_ID",
+    "VERCEL_OAUTH_CLIENT_SECRET",
+    "VERCEL_INTEGRATION_SLUG",
+  ],
+  // Token entry needs nothing server-side; the user supplies the credential.
+  neon: [],
+};
+
+/** Which of a provider's required env vars are missing from this deployment. */
+export function missingEnvFor(providerId: string): string[] {
+  return (REQUIRED_ENV[providerId] ?? []).filter((name) => !process.env[name]);
+}
+
+export function providerConfigured(providerId: string): boolean {
+  return missingEnvFor(providerId).length === 0;
+}
+
 function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
   // Every catalogue entry has a registered adapter — a provider Forge cannot
   // actually connect to has no business being listed.
@@ -157,21 +193,28 @@ function toProviderInfo(entry: CatalogueEntry): ProviderInfo {
   return {
     ...entry,
     implemented: true,
+    configured: providerConfigured(entry.id),
+    requiredEnv: REQUIRED_ENV[entry.id],
     // The adapter is the authority on its own capabilities, so the catalogue
     // cannot drift from what the code can really do.
     capabilities: adapter.capabilities,
   };
 }
 
-export const PROVIDERS: ProviderInfo[] = ENTRIES.map(toProviderInfo);
-
-const BY_ID = new Map(PROVIDERS.map((p) => [p.id, p]));
+/**
+ * Built per call, not cached, because `configured` depends on the environment
+ * at request time rather than at module load.
+ */
+export function listProviderInfo(): ProviderInfo[] {
+  return ENTRIES.map(toProviderInfo);
+}
 
 export function getProvider(id: string): ProviderInfo | undefined {
-  return BY_ID.get(id);
+  const entry = ENTRIES.find((e) => e.id === id);
+  return entry ? toProviderInfo(entry) : undefined;
 }
 
 /** Display name for a provider slug, falling back to the slug itself. */
 export function providerName(id: string): string {
-  return BY_ID.get(id)?.displayName ?? id;
+  return ENTRIES.find((e) => e.id === id)?.displayName ?? id;
 }

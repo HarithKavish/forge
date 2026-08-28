@@ -128,12 +128,17 @@ export default async function IntegrationsPage() {
               {capabilityPills(row.provider)}
             </div>
             <div className="mt-auto flex items-center gap-2">
-              <Link
-                href={`/integrations/${row.provider.id}/connect`}
-                className="btn btn--sm btn--primary"
-              >
-                Connect
-              </Link>
+              {row.provider.configured ? (
+                <Link
+                  href={`/integrations/${row.provider.id}/connect`}
+                  className="btn btn--sm btn--primary"
+                >
+                  Connect
+                </Link>
+              ) : (
+                // Offering Connect here would dead-end on the start route.
+                <span className="pill pill--warning">Setup needed</span>
+              )}
               <Link href={`/integrations/${row.provider.id}`} className="btn btn--sm">
                 Details
               </Link>

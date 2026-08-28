@@ -31,7 +31,7 @@ import {
   type ResourceRow,
   type ResourceView,
 } from "@/lib/core/resources";
-import { PROVIDERS, getProvider, providerName } from "@/lib/providers/catalogue";
+import { getProvider, listProviderInfo, providerName } from "@/lib/providers/catalogue";
 import type {
   Alert,
   ConnectedAccount,
@@ -136,7 +136,7 @@ const toEnvironment = (row: EnvironmentRow): Environment => ({
 /* -------------------------------------------------------------------------- */
 
 export async function listProviders(): Promise<ProviderInfo[]> {
-  return PROVIDERS;
+  return listProviderInfo();
 }
 
 export async function getProviderInfo(id: string): Promise<ProviderInfo | undefined> {
