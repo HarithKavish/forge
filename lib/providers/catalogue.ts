@@ -77,16 +77,13 @@ const ENTRIES: CatalogueEntry[] = [
     displayName: "GitHub",
     category: "source",
     summary: "Repositories, visibility, and commit activity.",
-    credentialKind: "GitHub App — you install it, no token to paste",
+    credentialKind: "OAuth — you authorise Forge, no token to paste",
     consoleUrl: "https://github.com",
     connectMethod: "oauth",
     oauthStartPath: "/api/integrations/github/start",
-    requiredScopes: [
-      "Repository · Metadata: Read-only",
-      "Repository · Contents: Read-only",
-    ],
+    requiredScopes: ["repo", "read:org", "read:user"],
     caveat:
-      "Genuinely read-only: a GitHub App cannot write with these permissions. You choose whether to share every repository or pick specific ones, and can change that later from GitHub without reconnecting.",
+      "GitHub's OAuth Apps have no read-only variant of `repo`, so the grant includes write access even though Forge only ever issues GET requests. A GitHub App would allow read-only; this deployment uses an OAuth App deliberately.",
   },
   {
     id: "cloudflare",
@@ -156,7 +153,7 @@ const ENTRIES: CatalogueEntry[] = [
  * the build, where none of these exist, which would bake in "not configured".
  */
 const REQUIRED_ENV: Record<string, string[]> = {
-  github: ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_PRIVATE_KEY"],
+  github: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
   cloudflare: ["CLOUDFLARE_OAUTH_CLIENT_ID", "CLOUDFLARE_OAUTH_CLIENT_SECRET"],
   vercel: [
     "VERCEL_OAUTH_CLIENT_ID",

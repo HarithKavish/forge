@@ -1,23 +1,27 @@
 /**
  * GitHub adapter.
  *
- * Backed by a GitHub App installation rather than an OAuth token. The
- * difference that matters: the app asks for `Contents: Read-only` and
- * `Metadata: Read-only`, so a connection cannot write, and the installer
- * chooses which repositories to share.
+ * The first real implementation of ProviderAdapter, and the test of whether the
+ * abstraction holds: it talks only to GitHub's REST API and returns plain
+ * normalized objects. It does not import the database, does not know what a
+ * project is, and does not decide whether a repository is unused.
  *
- * A connection stores only an installation id. The short-lived installation
- * token is minted per run from the app's private key, so there is no
- * long-lived per-user secret at all.
+ * Capabilities are honest. GitHub exposes no infrastructure cost, so `cost` is
+ * false and the UI renders "not supported" rather than an empty figure.
  */
 
 import { z } from "zod";
 
-import { providerFetch } from "../http";
-import { ProviderAuthError } from "../errors";
-import { installationAccount, installationToken } from "./app";
+import {
+  ProviderAuthError,
+  ProviderPermissionError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from "../errors";
+import { refreshGitHubToken } from "./oauth";
 import type {
   AccountIdentity,
+  RefreshedCredentials,
   DiscoveredResource,
   ProviderAdapter,
   ProviderContext,
@@ -27,14 +31,21 @@ import type {
 
 const API = "https://api.github.com";
 
-/** Not a secret — the app's private key is what grants access, and that is in the environment. */
+/** What Forge stores for a GitHub connection. OAuth gives us a bearer token. */
 export const githubCredentialSchema = z.object({
-  installationId: z.string().min(1),
+  accessToken: z.string().min(1),
+  /** Scopes GitHub actually granted, which can be narrower than requested. */
+  scope: z.string().optional(),
+  tokenType: z.string().optional(),
+  /**
+   * Only issued when the OAuth App expires access tokens. Absent means the
+   * access token is permanent and there is nothing to refresh.
+   */
+  refreshToken: z.string().optional(),
+  refreshTokenExpiresAt: z.string().optional(),
 });
 
 export type GitHubCredentials = z.infer<typeof githubCredentialSchema>;
-
-type Ctx = ProviderContext<GitHubCredentials>;
 
 /** Only the fields Forge uses. GitHub returns far more. */
 interface GitHubRepo {
@@ -50,6 +61,7 @@ interface GitHubRepo {
   language: string | null;
   default_branch: string;
   created_at: string;
+  updated_at: string;
   pushed_at: string | null;
   size: number;
   stargazers_count: number;
@@ -58,40 +70,67 @@ interface GitHubRepo {
   owner: { login: string; type: string };
 }
 
-/**
- * One token per discovery run, reused across pages.
- *
- * Minting per page would be several needless round trips; minting once per run
- * keeps the token's life as short as the work that needs it.
- */
-async function tokenFor(ctx: Ctx): Promise<string> {
-  const cached = ctx.settings.__installationToken;
-  if (typeof cached === "string" && cached) return cached;
+async function githubFetch(
+  path: string,
+  ctx: ProviderContext<GitHubCredentials>,
+): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(path.startsWith("http") ? path : API + path, {
+      headers: {
+        Authorization: "Bearer " + ctx.credentials.accessToken,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Forge (forge.harithkavish.com)",
+      },
+      signal: ctx.signal,
+      cache: "no-store",
+    });
+  } catch (cause) {
+    // Network-level failure. Retryable, and must never be read as "the
+    // repositories are gone".
+    throw new ProviderUnavailableError(
+      "Could not reach the GitHub API.",
+      "github",
+      cause,
+    );
+  }
 
-  // A connection made against the old OAuth App has a token but no
-  // installation id. Say that plainly rather than failing as a generic auth
-  // error the user cannot act on.
-  if (!ctx.credentials.installationId) {
+  if (response.ok) return response;
+
+  // 401 means the token is dead; 403 is either rate limiting or a missing
+  // scope, and those need very different handling.
+  if (response.status === 401) {
     throw new ProviderAuthError(
-      "This GitHub connection predates the Forge GitHub App. Disconnect it and connect again to re-establish it.",
+      "GitHub rejected the stored token. It may have been revoked.",
       "github",
     );
   }
 
-  const minted = await installationToken(ctx.credentials.installationId);
-  // `settings` is per-call scratch space here, never persisted.
-  (ctx.settings as Record<string, unknown>).__installationToken = minted.token;
-  return minted.token;
-}
+  if (response.status === 403 || response.status === 429) {
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    if (remaining === "0") {
+      const reset = Number(response.headers.get("x-ratelimit-reset") ?? 0);
+      const seconds = reset
+        ? Math.max(1, reset - Math.floor(Date.now() / 1000))
+        : undefined;
+      throw new ProviderRateLimitError(
+        "GitHub rate limit reached.",
+        "github",
+        seconds,
+      );
+    }
+    throw new ProviderPermissionError(
+      "GitHub refused the request. The token is missing a required scope.",
+      "github",
+      "repo",
+    );
+  }
 
-async function get<T>(ctx: Ctx, path: string): Promise<Response> {
-  return providerFetch({
-    provider: "github",
-    url: path.startsWith("http") ? path : API + path,
-    token: await tokenFor(ctx),
-    signal: ctx.signal,
-    headers: { "X-GitHub-Api-Version": "2022-11-28" },
-  });
+  throw new ProviderUnavailableError(
+    "GitHub returned " + response.status + ".",
+    "github",
+  );
 }
 
 /** Follows RFC 5988 `Link` headers rather than guessing at page counts. */
@@ -108,7 +147,7 @@ function nextPageUrl(response: Response): string | undefined {
 }
 
 /**
- * Repository state on Forge's scale.
+ * Repository state, mapped onto Forge's semantic scale.
  *
  * "Archived" is a deliberate choice by the owner, not a fault, so it is a
  * warning rather than an error — it means "look at this", not "something broke".
@@ -136,39 +175,42 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
   credentialSchema: githubCredentialSchema,
 
   async authenticate(ctx) {
-    const installation = await installationAccount(ctx.credentials.installationId);
+    const response = await githubFetch("/user", ctx);
+    const user = (await response.json()) as {
+      id: number;
+      login: string;
+      name: string | null;
+      type: string;
+    };
 
     const identity: AccountIdentity = {
-      externalAccountId: installation.accountId,
-      displayName:
-        installation.accountType === "Organization"
-          ? `${installation.accountLogin} (organisation)`
-          : `@${installation.accountLogin}`,
+      // GitHub's numeric id, not the login: logins can be renamed, ids cannot.
+      externalAccountId: String(user.id),
+      displayName: user.name ? user.name + " (@" + user.login + ")" : "@" + user.login,
       settings: {
-        login: installation.accountLogin,
-        accountType: installation.accountType,
-        installationId: installation.installationId,
-        // "all" or "selected" — worth surfacing, since "selected" means the
-        // inventory is deliberately partial rather than incomplete.
-        repositorySelection: installation.repositorySelection,
+        login: user.login,
+        accountType: user.type,
+        grantedScope: ctx.credentials.scope ?? "",
       },
     };
     return identity;
   },
 
   /**
-   * Streams every repository the installation can see, page by page, so a large
-   * account is never held in memory all at once.
+   * Streams every repository the token can see — owned, collaborator, and via
+   * org membership — page by page, so a large account never has to be held in
+   * memory all at once.
    */
   async *discoverResources(ctx) {
-    let url: string | undefined = "/installation/repositories?per_page=100";
+    let url: string | undefined =
+      "/user/repos?per_page=100&affiliation=owner,collaborator,organization_member&sort=full_name";
 
     while (url) {
-      const response: Response = await get(ctx, url);
-      const page = (await response.json()) as { repositories: GitHubRepo[] };
+      const response: Response = await githubFetch(url, ctx);
+      const repos = (await response.json()) as GitHubRepo[];
 
-      for (const repo of page.repositories ?? []) {
-        yield {
+      for (const repo of repos) {
+        const discovered: DiscoveredResource = {
           // Numeric id, stable across renames and transfers.
           providerResourceId: String(repo.id),
           resourceType: "github.repository",
@@ -187,7 +229,6 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
            * look active.
            */
           lastActivityAt: repo.pushed_at ? new Date(repo.pushed_at) : undefined,
-          activitySignalAvailable: true,
           managementUrl: repo.html_url,
           metadata: {
             visibility: repo.visibility ?? (repo.private ? "private" : "public"),
@@ -202,7 +243,8 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
             openIssues: String(repo.open_issues_count),
             description: repo.description ?? "",
           },
-        } satisfies DiscoveredResource;
+        };
+        yield discovered;
       }
 
       url = nextPageUrl(response);
@@ -210,20 +252,31 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
   },
 
   async getResourceStatus(ctx, resource) {
-    const response = await get(ctx, `/repositories/${resource.providerResourceId}`);
+    const response = await githubFetch(
+      "/repositories/" + resource.providerResourceId,
+      ctx,
+    );
     const repo = (await response.json()) as GitHubRepo;
     return {
       healthStatus: repoHealth(repo),
-      providerStatus: repo.archived ? "archived" : repo.disabled ? "disabled" : "active",
+      providerStatus: repo.archived
+        ? "archived"
+        : repo.disabled
+          ? "disabled"
+          : "active",
     };
   },
 
   async getActivity(ctx, resource, since) {
-    const response = await get(
+    const response = await githubFetch(
+      "/repositories/" +
+        resource.providerResourceId +
+        "/commits?per_page=100&since=" +
+        since.toISOString(),
       ctx,
-      `/repositories/${resource.providerResourceId}/commits?per_page=100&since=${since.toISOString()}`,
     );
     const commits = (await response.json()) as {
+      sha: string;
       commit: { author: { date: string } | null };
     }[];
 
@@ -233,8 +286,38 @@ export const githubAdapter: ProviderAdapter<GitHubCredentials> = {
       .map((date) => ({ signal: "github.push", observedAt: new Date(date) }));
   },
 
+  /**
+   * Only meaningful when the OAuth App issues expiring tokens. Without a
+   * refresh token this throws rather than silently returning a dead credential,
+   * so the failure is visible as "reconnect" instead of a mysterious 401.
+   */
+  async refreshCredentials(credentials): Promise<RefreshedCredentials<GitHubCredentials>> {
+    if (!credentials.refreshToken) {
+      throw new ProviderAuthError(
+        "This GitHub connection has no refresh token. Reconnect the account.",
+        "github",
+      );
+    }
+
+    const token = await refreshGitHubToken(credentials.refreshToken);
+
+    return {
+      credentials: {
+        accessToken: token.accessToken,
+        // GitHub rotates the refresh token on use; keep the new one.
+        refreshToken: token.refreshToken ?? credentials.refreshToken,
+        refreshTokenExpiresAt:
+          token.refreshTokenExpiresAt?.toISOString() ??
+          credentials.refreshTokenExpiresAt,
+        scope: token.scope ?? credentials.scope,
+        tokenType: token.tokenType ?? credentials.tokenType,
+      },
+      expiresAt: token.expiresAt,
+    };
+  },
+
   getManagementUrl(resource: ResourceRef) {
     // A pure template — no API call — so the inventory renders links for free.
-    return resource.name ? `https://github.com/${resource.name}` : undefined;
+    return resource.name ? "https://github.com/" + resource.name : undefined;
   },
 };

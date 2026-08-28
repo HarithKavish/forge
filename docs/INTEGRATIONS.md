@@ -9,8 +9,7 @@ in the catalogue is listed so the shape of the product is visible, and is
 labelled *adapter not built yet* rather than being offered as a connect button
 that cannot work.
 
-**GitHub, Cloudflare and Vercel connect by authorising Forge** — GitHub as an
-installed App, the other two over OAuth — each user authorises
+**GitHub, Cloudflare and Vercel connect over OAuth** — each user authorises
 their own account, and nothing has to be pasted.
 
 **Neon takes an API key**, entered on the connect page. Neon's OAuth is real and
@@ -27,59 +26,48 @@ rejected without ever reaching the database.
 
 ## GitHub
 
-**Connects as a GitHub App**, not an OAuth App. That is the difference between a
-consent screen an external user will accept and one they will not:
+**Connects over OAuth**, using a GitHub OAuth App.
 
-| | OAuth App | GitHub App |
-|---|---|---|
-| Read-only possible | **No** — `repo` grants write, no read-only variant exists | **Yes** — `Contents: Read-only` |
-| Repository choice | all or nothing | installer picks all, or specific repos |
-| Per-user secret | a long-lived token | none — only an installation id |
+### Creating the OAuth App
 
-### Creating the app
-
-<https://github.com/settings/apps> → **New GitHub App**
+<https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**
 
 | Field | Value |
 |---|---|
-| Name | `Forge` |
+| Application name | `Forge` |
 | Homepage URL | `https://forge.harithkavish.com` |
-| Callback URL | `https://forge.harithkavish.com/api/integrations/github/callback` |
-| Webhook | **Uncheck Active** — Forge does not use webhooks yet |
-| Where can it be installed | **Any account**, for external users |
+| Redirect URI | `https://forge.harithkavish.com/api/integrations/github/callback` |
 
-**Repository permissions** — read-only:
-
-- Metadata: **Read-only** (mandatory)
-- Contents: **Read-only**
-
-Then **Generate a private key**, which downloads a `.pem`.
+GitHub accepts up to 10 redirect URIs, so one app covers production and
+localhost. Leave **Allow wildcard matching** off.
 
 ```
-GITHUB_APP_ID            # shown on the app page
-GITHUB_APP_SLUG          # the app's URL name, e.g. "forge"
-GITHUB_APP_PRIVATE_KEY   # the .pem — newlines as 
-, or base64 the whole file
+GITHUB_OAUTH_CLIENT_ID
+GITHUB_OAUTH_CLIENT_SECRET
 ```
 
-### How authentication works
+### Scopes, and a caveat worth reading
 
-No per-user secret is stored. A connection records only an **installation id**;
-the private key in the environment is what grants access.
+| Scope | Why |
+|---|---|
+| `repo` | Private repositories are invisible without it |
+| `read:org` | Org-owned repositories |
+| `read:user` | Labels the connection |
 
-```
-app private key  →  RS256 JWT (10 min)  →  installation token (1 hour)  →  API call
-```
+`repo` grants **read and write**. GitHub's OAuth Apps have no read-only variant
+of it, so the grant is broader than what Forge uses — Forge only ever issues GET
+requests. The connect screen states this rather than burying it.
 
-The installation token is minted once per discovery run and never persisted, so
-there is nothing long-lived per user to leak. The JWT is signed with
-`node:crypto` rather than a JWT library — it is one RS256 signature, and the
-only JWT library present is a transitive dependency of Auth.js, which is not
-something to build on.
+A GitHub **App** (rather than an OAuth App) supports `Contents: Read-only` and
+per-repository selection, and is what Vercel's GitHub integration uses. It was
+built and then reverted here in favour of the OAuth App: a deliberate choice to
+keep the credential shape consistent with Cloudflare and Vercel. The trade-off
+is the write grant above.
 
 ### Discovery
 
-`GET /installation/repositories`, paginated by `Link` header.
+`GET /user/repos` with `affiliation=owner,collaborator,organization_member`,
+paginated by `Link` header.
 
 | Forge field | From |
 |---|---|
@@ -91,9 +79,6 @@ something to build on.
 
 `pushed_at` rather than `updated_at`: the latter moves when a description
 changes, which would make an untouched repository look active.
-
-`repository_selection` is stored on the connected account, so a partial
-inventory can be recognised as deliberate rather than broken.
 
 **Cost:** none. GitHub bills per seat, not per repository.
 
