@@ -3,9 +3,9 @@
 /**
  * Forge design system.
  *
- * The token structure, radii, shadow softness, 160ms transitions and the
- * translateY(-1px) hover lift are shared with the wider harithkavish.com
- * ecosystem so Forge reads as part of the same family. Forge's own identity
+ * Colour, radii, shadow and the 160ms transition come from the shared design
+ * system, loaded in app/layout.tsx. Only what Forge adds is defined here, so
+ * the family reads the same without this file restating it. Forge's own identity
  * comes from density and layout — an application shell rather than a centered
  * marketing column — not from a different palette.
  *
@@ -18,33 +18,20 @@
 :root {
   color-scheme: light;
 
-  --bg: #f4f9fb;
-  --bg-accent: #e4eef2;
-  --surface: rgba(255, 255, 255, 0.86);
-  --surface-strong: #ffffff;
-  --surface-soft: rgba(255, 255, 255, 0.58);
   --surface-sunken: rgba(24, 32, 40, 0.025);
-  --text: #182028;
-  --muted: #5a646d;
   --faint: #808a93;
-  --border: rgba(24, 32, 40, 0.11);
   --border-strong: rgba(24, 32, 40, 0.18);
-  --accent: #123f50;
-  --accent-strong: #081f29;
   --accent-soft: rgba(18, 63, 80, 0.08);
-  --pill-bg: rgba(18, 63, 80, 0.08);
-  --shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
-  --shadow-strong: 0 16px 36px rgba(15, 23, 42, 0.08);
   --chrome-bg: rgba(244, 249, 251, 0.84);
 
   /* Status scale. Colour is never the only signal — every badge pairs these
      with a glyph and a text label. */
-  --status-healthy: #267f57;
-  --status-healthy-bg: rgba(38, 127, 87, 0.1);
-  --status-healthy-border: rgba(38, 127, 87, 0.2);
-  --status-warning: #8b6a31;
-  --status-warning-bg: rgba(124, 92, 47, 0.09);
-  --status-warning-border: rgba(124, 92, 47, 0.18);
+  --status-healthy: var(--status-live-fg);
+  --status-healthy-bg: var(--status-live-bg);
+  --status-healthy-border: var(--status-live-border);
+  --status-warning: var(--status-progress-fg);
+  --status-warning-bg: var(--status-progress-bg);
+  --status-warning-border: var(--status-progress-border);
   --status-error: #a8352c;
   --status-error-bg: rgba(168, 53, 44, 0.09);
   --status-error-border: rgba(168, 53, 44, 0.2);
@@ -55,36 +42,22 @@
   --status-syncing-bg: rgba(44, 98, 133, 0.09);
   --status-syncing-border: rgba(44, 98, 133, 0.2);
 
-  --radius-card: 1.4rem;
   --radius-inner: 0.9rem;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0b1014;
-  --bg-accent: #11181d;
-  --surface: rgba(17, 24, 29, 0.86);
-  --surface-strong: #121a1f;
-  --surface-soft: rgba(24, 33, 39, 0.72);
   --surface-sunken: rgba(255, 255, 255, 0.025);
-  --text: #eef2f4;
-  --muted: #a4afb6;
   --faint: #7d888f;
-  --border: rgba(255, 255, 255, 0.11);
   --border-strong: rgba(255, 255, 255, 0.18);
-  --accent: #cedfe6;
-  --accent-strong: #f3f8fa;
   --accent-soft: rgba(206, 223, 230, 0.1);
-  --pill-bg: rgba(206, 223, 230, 0.08);
-  --shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
-  --shadow-strong: 0 16px 36px rgba(0, 0, 0, 0.28);
   --chrome-bg: rgba(11, 16, 20, 0.86);
 
-  --status-healthy: #92d3b0;
+  --status-healthy: var(--status-live-fg);
   --status-healthy-bg: rgba(146, 211, 176, 0.1);
   --status-healthy-border: rgba(146, 211, 176, 0.22);
-  --status-warning: #d9be8a;
+  --status-warning: var(--status-progress-fg);
   --status-warning-bg: rgba(217, 190, 138, 0.1);
   --status-warning-border: rgba(217, 190, 138, 0.22);
   --status-error: #ee9c94;
@@ -122,7 +95,6 @@
   --color-unknown: var(--status-unknown);
   --color-syncing: var(--status-syncing);
 
-  --radius-card: var(--radius-card);
   --radius-inner: var(--radius-inner);
 
   --shadow-soft: var(--shadow);
