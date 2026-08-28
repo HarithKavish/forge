@@ -18,7 +18,12 @@ import { authConfig } from "@/lib/auth/config";
 const { auth } = NextAuth(authConfig);
 
 /** Reachable without a session. Everything else requires one. */
-const PUBLIC_PATHS = ["/login"];
+/**
+ * Reachable without a session. The legal pages are public because Google and
+ * Vercel fetch them while reviewing the app, and a redirect to /login would
+ * read as a broken link.
+ */
+const PUBLIC_PATHS = ["/login", "/privacy", "/terms"];
 
 export default auth((request) => {
   const { pathname, search } = request.nextUrl;

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { requireSession } from "@/lib/auth/session";
 import { signOutAction } from "@/lib/auth/actions";
 import { DetailRow, SectionCard } from "@/components/ui/page";
+import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 
 export const metadata: Metadata = {
   title: "Account settings",
@@ -45,6 +46,18 @@ export default async function AccountSettingsPage() {
           Your name and email come from Google, so they are changed there rather
           than here.
         </p>
+      </SectionCard>
+
+      <SectionCard title="Delete account">
+        <p className="mb-3 text-sm leading-relaxed text-muted">
+          Removes your account, your workspace, and every project, resource,
+          connection and stored credential in it. Immediate and irreversible.
+        </p>
+        <p className="mb-4 text-sm leading-relaxed text-muted">
+          Nothing is changed in your connected platforms. To revoke Forge&rsquo;s
+          access there as well, remove it from each platform&rsquo;s own settings.
+        </p>
+        <DeleteAccountForm email={session.email} />
       </SectionCard>
 
       <SectionCard title="Sign out">

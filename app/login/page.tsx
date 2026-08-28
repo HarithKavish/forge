@@ -83,8 +83,14 @@ export default async function LoginPage({
         </div>
       </main>
 
-      <footer className="px-5 py-5 text-center text-[0.8rem] text-faint sm:px-8">
-        Forge · forge.harithkavish.com
+      <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-5 py-5 text-center text-[0.8rem] text-faint sm:px-8">
+        <span>Forge · forge.harithkavish.com</span>
+        <a href="/privacy" className="hover:text-text">
+          Privacy
+        </a>
+        <a href="/terms" className="hover:text-text">
+          Terms
+        </a>
       </footer>
     </div>
   );
