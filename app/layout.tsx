@@ -46,6 +46,12 @@ export default function RootLayout({
     // markup legitimately differs from the client's first read.
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* The ecosystem's foundations. Forge adds its own tokens on top in
+            globals.css and no longer restates the shared ones. */}
+        <link
+          rel="stylesheet"
+          href="https://harithkavish.com/design-system/v1.0.0/tokens.css?v=20260829.2"
+        />
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>{children}</body>
