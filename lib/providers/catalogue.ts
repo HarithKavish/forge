@@ -68,13 +68,16 @@ const ENTRIES: CatalogueEntry[] = [
     displayName: "GitHub",
     category: "source",
     summary: "Repositories, visibility, and commit activity.",
-    credentialKind: "OAuth — you authorise Forge, no token to paste",
+    credentialKind: "GitHub App — you install it, no token to paste",
     consoleUrl: "https://github.com",
     connectMethod: "oauth",
     oauthStartPath: "/api/integrations/github/start",
-    requiredScopes: ["repo", "read:org", "read:user"],
+    requiredScopes: [
+      "Repository · Metadata: Read-only",
+      "Repository · Contents: Read-only",
+    ],
     caveat:
-      "GitHub's OAuth Apps have no read-only variant of `repo`, so the grant includes write access even though Forge only ever issues GET requests.",
+      "Genuinely read-only: a GitHub App cannot write with these permissions. You choose whether to share every repository or pick specific ones, and can change that later from GitHub without reconnecting.",
   },
   {
     id: "cloudflare",

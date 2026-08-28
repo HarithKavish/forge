@@ -9,7 +9,8 @@ in the catalogue is listed so the shape of the product is visible, and is
 labelled *adapter not built yet* rather than being offered as a connect button
 that cannot work.
 
-**GitHub, Cloudflare and Vercel connect over OAuth** — each user authorises
+**GitHub, Cloudflare and Vercel connect by authorising Forge** — GitHub as an
+installed App, the other two over OAuth — each user authorises
 their own account, and nothing has to be pasted.
 
 **Neon takes an API key**, entered on the connect page. Neon's OAuth is real and
@@ -26,120 +27,59 @@ rejected without ever reaching the database.
 
 ## GitHub
 
-### The callback URL
+**Connects as a GitHub App**, not an OAuth App. That is the difference between a
+consent screen an external user will accept and one they will not:
 
-Determined by `app/api/integrations/github/callback/route.ts`:
+| | OAuth App | GitHub App |
+|---|---|---|
+| Read-only possible | **No** — `repo` grants write, no read-only variant exists | **Yes** — `Contents: Read-only` |
+| Repository choice | all or nothing | installer picks all, or specific repos |
+| Per-user secret | a long-lived token | none — only an installation id |
 
-```
-https://forge.harithkavish.com/api/integrations/github/callback
-```
+### Creating the app
 
-GitHub's current form accepts **up to 10 redirect URIs**, so one OAuth App can
-serve production and local development. Add both:
-
-```
-https://forge.harithkavish.com/api/integrations/github/callback
-http://localhost:3000/api/integrations/github/callback
-```
-
-Leave **Allow wildcard matching** off. It would let tokens be sent to any
-subdomain or path under the URI, which is far more surface than this needs.
-
-### Creating the OAuth App
-
-<https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**
+<https://github.com/settings/apps> → **New GitHub App**
 
 | Field | Value |
 |---|---|
-| Application name | `Forge` |
+| Name | `Forge` |
 | Homepage URL | `https://forge.harithkavish.com` |
-| Application description | optional |
-| Redirect URI | `https://forge.harithkavish.com/api/integrations/github/callback` |
+| Callback URL | `https://forge.harithkavish.com/api/integrations/github/callback` |
+| Webhook | **Uncheck Active** — Forge does not use webhooks yet |
+| Where can it be installed | **Any account**, for external users |
 
-Leave **Enable Device Flow** unchecked and **Allow wildcard matching** off.
+**Repository permissions** — read-only:
 
-Leave **Expire user access tokens** *checked*. Access tokens then last 8 hours
-and come with a refresh token good for 6 months, which Forge handles
-automatically — see [Token lifetime](#token-lifetime). Unchecking it would
-issue a permanent token instead, which is a worse thing to be holding.
+- Metadata: **Read-only** (mandatory)
+- Contents: **Read-only**
 
-Press **Register application**, then **Generate a new client secret**. GitHub
-shows the secret once.
-
-### Environment variables
+Then **Generate a private key**, which downloads a `.pem`.
 
 ```
-GITHUB_OAUTH_CLIENT_ID
-GITHUB_OAUTH_CLIENT_SECRET
+GITHUB_APP_ID            # shown on the app page
+GITHUB_APP_SLUG          # the app's URL name, e.g. "forge"
+GITHUB_APP_PRIVATE_KEY   # the .pem — newlines as 
+, or base64 the whole file
 ```
 
-Deliberately not named `AUTH_*`. Those belong to Auth.js and answer *who is this
-person*; these answer *which GitHub account may Forge read on their behalf*.
-Keeping the names apart keeps the two concerns from being confused.
+### How authentication works
 
-```bash
-npx vercel env add GITHUB_OAUTH_CLIENT_ID production
-npx vercel env add GITHUB_OAUTH_CLIENT_SECRET production
+No per-user secret is stored. A connection records only an **installation id**;
+the private key in the environment is what grants access.
+
+```
+app private key  →  RS256 JWT (10 min)  →  installation token (1 hour)  →  API call
 ```
 
-### Scopes, and why each one
+The installation token is minted once per discovery run and never persisted, so
+there is nothing long-lived per user to leak. The JWT is signed with
+`node:crypto` rather than a JWT library — it is one RS256 signature, and the
+only JWT library present is a transitive dependency of Auth.js, which is not
+something to build on.
 
-| Scope | What it grants | Why Forge needs it |
-|---|---|---|
-| `repo` | Read **and write** access to repositories, including private | Private repositories are invisible without it. GitHub's OAuth Apps have **no read-only variant** for private repos, so this grant is broader than what Forge uses. Forge only ever issues GET requests. |
-| `read:org` | See organisation membership | Without it, org-owned repositories do not appear |
-| `read:user` | Read your public profile | Labels the connection with the account it belongs to |
+### Discovery
 
-The connect screen states the `repo` caveat plainly rather than burying it. If
-that grant is more than you want, a GitHub **App** (rather than an OAuth App)
-supports fine-grained read-only repository permissions — noted below as the
-eventual path.
-
-### Token lifetime
-
-With **Expire user access tokens** enabled, GitHub issues:
-
-| Token | Lifetime | Stored |
-|---|---|---|
-| Access token | 8 hours | encrypted, with its expiry in `provider_credentials.expires_at` |
-| Refresh token | 6 months, rotated on each use | encrypted alongside it |
-
-Before a discovery run, the sync layer checks the stored expiry. If the access
-token is within five minutes of expiring, it calls
-`adapter.refreshCredentials()`, persists the new pair, and proceeds. The margin
-matters: without it a token could pass the check and then expire mid-run,
-halfway through pagination.
-
-Refreshing happens *before* a call rather than in response to a 401, so a sync
-is never spent discovering that the credential died. GitHub rotates the refresh
-token on every use, and the new one replaces the old.
-
-If the OAuth App does **not** expire tokens, no refresh token is issued, no
-expiry is stored, and the refresh path is simply never taken —
-`refreshCredentials` is optional on the adapter interface precisely because a
-static API key or an IAM role has nothing to refresh.
-
-If the refresh token itself expires (6 months unused), the next sync fails with
-an auth error and the account is marked *needs re-auth*.
-
-### What is stored
-
-| Where | What |
-|---|---|
-| `connected_accounts` | GitHub's numeric user id, display name, granted scope. No secret. |
-| `provider_credentials` | Access token, refresh token and expiry — AES-256-GCM encrypted, bound to the connected account |
-| `resources` | One row per repository |
-
-The token is decrypted in memory only for the duration of a call to GitHub. It
-is never logged, never returned by an API, and never reaches the browser.
-
-GitHub's numeric id — not the login — identifies the account, because a login
-can be renamed and an id cannot.
-
-### What discovery collects
-
-`GET /user/repos` with `affiliation=owner,collaborator,organization_member`,
-paginated by `Link` header until exhausted.
+`GET /installation/repositories`, paginated by `Link` header.
 
 | Forge field | From |
 |---|---|
@@ -148,51 +88,15 @@ paginated by `Link` header until exhausted.
 | `health_status` | `disabled` → error, `archived` → warning, else healthy |
 | `last_activity_at` | **`pushed_at`** |
 | `management_url` | `html_url` |
-| `metadata` | visibility, owner, default branch, language, fork, stars, open issues |
 
-`pushed_at` is used rather than `updated_at` on purpose: `updated_at` moves when
-metadata like a description changes, which would make an untouched repository
-look active. Activity has to mean activity.
+`pushed_at` rather than `updated_at`: the latter moves when a description
+changes, which would make an untouched repository look active.
 
-`cost` is `false`. GitHub bills per seat, not per repository, so there is no
-per-resource figure and Forge will not invent one.
+`repository_selection` is stored on the connected account, so a partial
+inventory can be recognised as deliberate rather than broken.
 
-### Activity classification
+**Cost:** none. GitHub bills per seat, not per repository.
 
-| State | Rule |
-|---|---|
-| Active | a push within 30 days |
-| Recently inactive | no push for 30–59 days |
-| Potentially unused | no push for 60+ days |
-| Unknown | no usage signal at all |
-
-The measurement is stored in `activity_reason` and the conclusion in
-`activity_state`, so the UI can show them as separate things. A provider that
-exposes no signal yields *unknown*, never *unused* — absence of evidence is not
-evidence of disuse.
-
-### Re-running discovery
-
-Discovery runs on connect, and on demand via **Synchronize now** on the
-integration page. There is no scheduled background sync yet.
-
-Reconciliation is non-destructive:
-
-- new repositories are inserted
-- existing ones are updated **except** their project, environment and service —
-  a resync must never undo your own organisation of the inventory
-- repositories the API no longer returns are marked `presence = 'missing'`,
-  never deleted
-
-That last rule matters: a revoked token, a narrowed scope or a GitHub outage
-would otherwise look identical to "all your repositories were deleted".
-
-### Disconnecting
-
-Destroys the stored credential and removes that account's resources. Nothing at
-GitHub is changed. You can also revoke Forge's access from
-<https://github.com/settings/applications> at any time — the next sync then
-fails with an auth error and the account is marked *needs re-auth*.
 
 ---
 
