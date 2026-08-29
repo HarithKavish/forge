@@ -59,11 +59,11 @@ export default function PrivacyPage() {
           account at{" "}
           <span className="font-mono">auth.harithkavish.com</span>, and Forge is
           told your account identifier and your name. That is all it receives.
-          Whether you proved your identity with a user ID and password or with
-          Google is decided there, and Forge is not told which.
+          How you proved your identity is decided there, and Forge is not told
+          which method you used.
         </p>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Forge holds no password, and no token belonging to Google or any other
+          Forge holds no password, and no token belonging to any authentication
           provider. Your account identifier is issued by the identity service, so
           changing how you sign in never moves your data.
         </p>

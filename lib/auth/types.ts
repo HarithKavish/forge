@@ -17,7 +17,12 @@ import type { JWT } from "next-auth/jwt";
 export interface ForgeSession {
   /** Forge's internal user id. Never a provider's id. */
   userId: string;
-  email: string;
+  /**
+   * The account's own handle, as chosen at account.harithkavish.com. Null for a
+   * session issued before Forge started carrying it, so every reader must cope
+   * with its absence rather than render an empty line.
+   */
+  username: string | null;
   name: string;
   image?: string | null;
   /** The tenant every query is scoped to. */
@@ -31,6 +36,7 @@ declare module "next-auth" {
     workspaceName?: string;
     user: {
       id?: string;
+      username?: string | null;
     } & DefaultSession["user"];
   }
 }
@@ -38,6 +44,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     userId?: string;
+    username?: string | null;
     workspaceId?: string;
     workspaceName?: string;
   }

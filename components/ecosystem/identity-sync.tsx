@@ -17,16 +17,14 @@ import { store, USER_KEY } from "@/lib/ecosystem/store";
  */
 export function IdentitySync({
   name,
-  email,
   image,
 }: {
   name: string;
-  email: string;
   image?: string | null;
 }) {
   useEffect(() => {
-    store().set(USER_KEY, JSON.stringify({ name, email, picture: image ?? "" }));
-  }, [name, email, image]);
+    store().set(USER_KEY, JSON.stringify({ name, picture: image ?? "" }));
+  }, [name, image]);
 
   return null;
 }

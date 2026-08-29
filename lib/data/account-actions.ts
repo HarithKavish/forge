@@ -23,10 +23,11 @@ export async function deleteAccountAction(
   formData: FormData,
 ): Promise<DeleteAccountState> {
   const session = await requireSession();
-  const typed = String(formData.get("confirmEmail") ?? "").trim().toLowerCase();
+  const typed = String(formData.get("confirmIdentity") ?? "").trim().toLowerCase();
+  const expected = (session.username ?? session.name).toLowerCase();
 
-  if (typed !== session.email.toLowerCase()) {
-    return { error: "That does not match the email address on this account." };
+  if (!typed || typed !== expected) {
+    return { error: "That does not match the user ID on this account." };
   }
 
   await deleteAccountAndData(session.userId);

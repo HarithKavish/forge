@@ -22,8 +22,8 @@ function SubmitButton() {
  * The way into Forge.
  *
  * It leads to the ecosystem's identity service rather than to a provider. What
- * someone signs in with there — a user ID and password, or Google — is that
- * service's business, and Forge is told a subject either way.
+ * someone signs in with there is that service's business, and Forge is told a
+ * subject either way.
  *
  * `next` rides through the round trip so someone who asked for /projects lands
  * back on /projects rather than the dashboard.

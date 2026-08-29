@@ -20,8 +20,8 @@ export async function getSession(): Promise<ForgeSession | null> {
 
   return {
     userId: session.user.id,
-    email: session.user.email ?? "",
-    name: session.user.name ?? session.user.email ?? "Forge user",
+    username: session.user.username ?? null,
+    name: session.user.name ?? "Forge user",
     image: session.user.image,
     workspaceId: session.workspaceId,
     workspaceName: session.workspaceName ?? "Personal workspace",
