@@ -26,7 +26,7 @@ export default function PrivacyPage() {
       <section className="surface-card p-5">
         <h2 className="title-lg">In short</h2>
         <ul className="mt-3 flex list-disc flex-col gap-2 pl-4 text-sm leading-relaxed text-muted">
-          <li>Forge stores your name, email address and profile picture from Google.</li>
+          <li>Forge stores your name and an identifier from your HarithKavish account.</li>
           <li>
             When you connect a platform, Forge stores an encrypted access token
             and a read-only inventory of what it finds there.
@@ -55,18 +55,17 @@ export default function PrivacyPage() {
 
         <h3 className="mt-4 text-[0.95rem] font-[650]">When you sign in</h3>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Forge uses Google to sign you in and requests three scopes:{" "}
-          <span className="font-mono">openid</span>,{" "}
-          <span className="font-mono">email</span> and{" "}
-          <span className="font-mono">profile</span>. From these it stores your
-          name, email address, profile picture URL, and Google&rsquo;s account
-          identifier. Forge has no access to your Gmail, Drive, Contacts or any
-          other Google service, and does not request it.
+          Forge does not sign you in itself. You sign in to your HarithKavish
+          account at{" "}
+          <span className="font-mono">auth.harithkavish.com</span>, and Forge is
+          told your account identifier and your name. That is all it receives.
+          Whether you proved your identity with a user ID and password or with
+          Google is decided there, and Forge is not told which.
         </p>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Google&rsquo;s identifier is kept separately from your Forge account
-          identity, so a different sign-in method can be added later without your
-          data moving.
+          Forge holds no password, and no token belonging to Google or any other
+          provider. Your account identifier is issued by the identity service, so
+          changing how you sign in never moves your data.
         </p>
 
         <h3 className="mt-4 text-[0.95rem] font-[650]">When you connect a platform</h3>
@@ -161,7 +160,8 @@ export default function PrivacyPage() {
         <p className="mt-2 text-sm leading-relaxed text-muted">
           Go to <Link href="/settings" className="text-text underline">Settings &rarr; Account</Link>{" "}
           and choose <span className="font-[650]">Delete account</span>. This
-          removes your user record, your Google account link, your workspace, and
+          removes your user record, its link to your HarithKavish account, your
+          workspace, and
           every project, resource, connection and encrypted token in it. It takes
           effect immediately and cannot be undone.
         </p>
@@ -185,8 +185,8 @@ export default function PrivacyPage() {
           and you will get a response within 30 days.
         </p>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Your name and email come from Google, so correcting them is done there
-          rather than in Forge.
+          Your name comes from your HarithKavish account, so correcting it is done
+          at account.harithkavish.com rather than in Forge.
         </p>
       </section>
 

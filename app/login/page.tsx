@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { GoogleSignIn } from "@/components/auth/google-sign-in";
+import { EcosystemSignIn } from "@/components/auth/ecosystem-sign-in";
 import { ForgeLogo, ForgeMark } from "@/components/shell/brand";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
@@ -15,10 +15,10 @@ export const metadata: Metadata = {
  */
 const ERROR_MESSAGES: Record<string, string> = {
   OAuthAccountNotLinked:
-    "That email is already registered to Forge through a different sign-in method.",
-  AccessDenied: "Google sign-in was cancelled, so you were not signed in.",
+    "That account is already registered to Forge through a different sign-in method.",
+  AccessDenied: "Sign-in was cancelled, so you were not signed in.",
   Configuration:
-    "Forge's Google sign-in is not configured correctly. This is a server-side problem, not something you did.",
+    "Forge cannot reach the identity service. This is a server-side problem, not something you did.",
   Verification: "That sign-in link has expired. Try again.",
 };
 
@@ -67,12 +67,11 @@ export default async function LoginPage({
           ) : null}
 
           <section className="surface-card p-5">
-            <GoogleSignIn next={next} />
+            <EcosystemSignIn next={next} />
             <p className="mt-4 text-[0.82rem] leading-relaxed text-muted">
-              Google is currently the only way to sign in to Forge. Forge
-              receives your name, email address and profile picture — nothing
-              else, and it never gains access to anything else in your Google
-              account.
+              Forge uses your HarithKavish account — the same one as the rest of
+              the ecosystem. You sign in there, with a user ID and password or
+              with Google, and Forge is told who you are and nothing else.
             </p>
           </section>
 
