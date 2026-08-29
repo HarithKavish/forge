@@ -133,13 +133,17 @@ export const relationshipKind = pgEnum("relationship_kind", [
 /* -------------------------------------------------------------------------- */
 
 /**
- * Column names follow the Auth.js Drizzle adapter contract so OAuth sign-in can
- * be added later without a migration. V1 authenticates with `passwordHash`;
- * `accounts` stays empty until an OAuth login provider is enabled.
+ * Column names follow the Auth.js Drizzle adapter contract. Forge authenticates
+ * with Google; `accounts` holds that login identity.
  *
  * Note: an OAuth *login* identity (this table) is not the same thing as a
  * connected provider *account* (`connectedAccounts`). Signing in with GitHub
  * would not automatically grant Forge the right to inventory that GitHub org.
+ *
+ * These tables are temporary. Under the ecosystem's identity standard a person
+ * is owned by the Account platform, and Forge holds only its own data keyed by
+ * the subject the identity service issues. They stay until that service can
+ * authenticate, and no credential belongs in them meanwhile.
  */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -147,8 +151,6 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   image: text("image"),
-  /** Argon2id/bcrypt digest. Null for users who only ever used OAuth. */
-  passwordHash: text("password_hash"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
