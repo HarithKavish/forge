@@ -8,9 +8,9 @@
  * production environment to be present.
  *
  * Only variables this codebase reads directly are validated here. Auth.js
- * reads AUTH_SECRET, AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET itself and raises
- * its own errors, so duplicating those checks would only produce two different
- * error messages for one mistake.
+ * reads AUTH_SECRET and the identity provider's client credentials itself and
+ * raises its own errors, so duplicating those checks would only produce two
+ * different error messages for one mistake.
  */
 
 import { z } from "zod";

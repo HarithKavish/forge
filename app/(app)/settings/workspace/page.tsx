@@ -57,7 +57,9 @@ export default async function WorkspaceSettingsPage() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[0.92rem] font-[650]">{session.name}</p>
-            <p className="truncate text-[0.82rem] text-muted">{session.email}</p>
+            {session.username ? (
+              <p className="truncate text-[0.82rem] text-muted">@{session.username}</p>
+            ) : null}
           </div>
           <span className="pill pill--neutral">Owner</span>
         </div>

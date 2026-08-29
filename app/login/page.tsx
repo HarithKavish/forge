@@ -69,9 +69,9 @@ export default async function LoginPage({
           <section className="surface-card p-5">
             <EcosystemSignIn next={next} />
             <p className="mt-4 text-[0.82rem] leading-relaxed text-muted">
-              Forge uses your HarithKavish account — the same one as the rest of
-              the ecosystem. You sign in there, with a user ID and password or
-              with Google, and Forge is told who you are and nothing else.
+              Forge uses your HarithKavish account — the same one as the rest
+              of the ecosystem. You sign in there, and Forge is told who you are
+              and nothing else.
             </p>
           </section>
 

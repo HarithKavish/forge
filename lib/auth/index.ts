@@ -84,7 +84,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
      * existing token. The workspace lookup therefore runs once per sign-in
      * rather than once per request.
      */
-    async jwt({ token, user }) {
+    async jwt({ token, user, profile }) {
+      // Only present on the sign-in pass, so it is captured here or not at all.
+      if (profile && "preferred_username" in profile) {
+        const handle = profile.preferred_username;
+        token.username = typeof handle === "string" && handle ? handle : null;
+      }
+
       if (user?.id) {
         const workspace = await ensureWorkspaceForUser(user.id, user.name);
         token.userId = user.id;
@@ -108,6 +114,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async session({ session, token }) {
       if (token.userId) session.user.id = token.userId;
+      session.user.username = token.username ?? null;
       session.workspaceId = token.workspaceId;
       session.workspaceName = token.workspaceName;
       return session;
