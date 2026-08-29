@@ -34,9 +34,12 @@ export function cloudflareOAuthConfig(): CloudflareOAuthConfig {
   const clientId = process.env.CLOUDFLARE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.CLOUDFLARE_OAUTH_CLIENT_SECRET;
 
-  if (!clientId || !clientSecret) {
+  const scopes = process.env.CLOUDFLARE_OAUTH_SCOPES ?? "";
+
+  if (!clientId || !clientSecret || !scopes.trim()) {
     throw new Error(
-      "CLOUDFLARE_OAUTH_CLIENT_ID and CLOUDFLARE_OAUTH_CLIENT_SECRET must be set. See docs/INTEGRATIONS.md.",
+      "CLOUDFLARE_OAUTH_CLIENT_ID, CLOUDFLARE_OAUTH_CLIENT_SECRET and " +
+        "CLOUDFLARE_OAUTH_SCOPES must be set. See docs/INTEGRATIONS.md.",
     );
   }
 
@@ -46,15 +49,17 @@ export function cloudflareOAuthConfig(): CloudflareOAuthConfig {
     authorizeUrl: process.env.CLOUDFLARE_OAUTH_AUTHORIZE_URL ?? DEFAULT_AUTHORIZE_URL,
     tokenUrl: process.env.CLOUDFLARE_OAUTH_TOKEN_URL ?? DEFAULT_TOKEN_URL,
     /**
-     * Empty is meaningful: OAuth servers grant the client's registered scopes
-     * when the authorize request omits `scope` entirely. That is the safer
-     * default than guessing at names — asking for a scope the client was not
-     * registered with is rejected outright.
+     * Cloudflare does NOT fall back to the client's registered scopes when the
+     * authorize request omits `scope` -- it grants nothing, and the consent
+     * screen renders "0 total permissions" with no permission to tick, so the
+     * user cannot complete it. The scope list is therefore mandatory.
      *
-     * Set it to include `offline_access` once the names are known, so the
-     * connection can refresh rather than expiring and needing a manual reconnect.
+     * Names must be a subset of what the OAuth client was registered with:
+     * anything else is rejected at the authorize step with `invalid_scope`.
+     * Include `offline_access` to receive a refresh token, otherwise the
+     * connection expires and needs a manual reconnect.
      */
-    scopes: process.env.CLOUDFLARE_OAUTH_SCOPES ?? "",
+    scopes: scopes.trim(),
   };
 }
 
@@ -74,11 +79,7 @@ export function cloudflareAuthorizeUrl(
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", cloudflareCallbackUrl(origin));
-  // Omitted entirely when unset, so Cloudflare falls back to whatever the
-  // client was registered with.
-  if (config.scopes.trim()) {
-    url.searchParams.set("scope", config.scopes.trim());
-  }
+  url.searchParams.set("scope", config.scopes);
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");

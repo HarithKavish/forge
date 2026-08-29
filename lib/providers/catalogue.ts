@@ -154,7 +154,15 @@ const ENTRIES: CatalogueEntry[] = [
  */
 const REQUIRED_ENV: Record<string, string[]> = {
   github: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
-  cloudflare: ["CLOUDFLARE_OAUTH_CLIENT_ID", "CLOUDFLARE_OAUTH_CLIENT_SECRET"],
+  cloudflare: [
+    "CLOUDFLARE_OAUTH_CLIENT_ID",
+    "CLOUDFLARE_OAUTH_CLIENT_SECRET",
+    // Required, not optional: Cloudflare grants nothing when the authorize
+    // request omits `scope`, and its consent screen then has no permission to
+    // tick, so the user cannot complete it. Reporting the provider as
+    // unconfigured beats handing someone a dead end.
+    "CLOUDFLARE_OAUTH_SCOPES",
+  ],
   vercel: [
     "VERCEL_OAUTH_CLIENT_ID",
     "VERCEL_OAUTH_CLIENT_SECRET",
