@@ -56,3 +56,26 @@ export function store(): HarithStore {
 }
 
 export const THEME_KEY = "theme";
+
+/**
+ * Who the ecosystem believes is signed in.
+ *
+ * Forge reads this to decide whether to *ask* someone to sign in, and to paint
+ * their picture. It is never what decides whether they may see anything: that
+ * stays the Auth.js session, verified in middleware and on the server. Any
+ * subdomain can write this value, so treating it as proof would be handing out
+ * access to whoever set a cookie.
+ */
+export const USER_KEY = "user";
+
+export type EcosystemUser = { name?: string; email?: string; picture?: string };
+
+export function readEcosystemUser(): EcosystemUser | null {
+  try {
+    const raw = store().get(USER_KEY);
+    const user = raw ? (JSON.parse(raw) as EcosystemUser) : null;
+    return user && (user.email || user.name) ? user : null;
+  } catch {
+    return null;
+  }
+}
