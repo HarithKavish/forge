@@ -2,17 +2,22 @@
  * Auth.js instance.
  *
  * The boundary between "how someone proved who they are" and "who they are in
- * Forge". Google proves identity; the Drizzle adapter turns that into a Forge
- * `users` row with its own uuid, plus an `accounts` row recording that this
- * Google account maps to it.
+ * Forge". The identity service proves it; the Drizzle adapter records the
+ * result.
  *
- * That indirection is the whole point. When the HarithKavish identity platform
- * replaces Google, it becomes another row in `accounts` for the same user —
- * every project, resource and workspace keeps pointing at the same internal id,
- * and nothing in the domain model has to change.
+ * That indirection was written for this moment, and it held: swapping Google
+ * for the identity service changed the provider and nothing else. Every
+ * project, resource and workspace still points at the same internal id.
+ *
+ * What changed is where that id comes from. It is now the account's own
+ * subject, issued by the identity service — Forge no longer invents an
+ * identifier for a person, it is told one. Under the ecosystem's identity
+ * standard the person belongs to the account platform, and `users` here is a
+ * reference to them carrying cached display claims, not the origin of anyone.
  */
 
 import NextAuth from "next-auth";
+import type { Adapter } from "next-auth/adapters";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 
 import { db } from "@/lib/db";
@@ -25,6 +30,36 @@ import {
 import { authConfig } from "./config";
 import { ensureWorkspaceForUser } from "./workspace";
 
+/**
+ * Keep the link, drop the tokens.
+ *
+ * The adapter would persist whatever came back from the token exchange. Forge
+ * spends that token once, to ask who signed in, and never needs it again — so
+ * storing it means holding a credential for a service Forge does not call, on
+ * the chance it is useful later. It is not.
+ *
+ * What stays in `accounts` is the link itself: which subject at the identity
+ * service this Forge user is. That is a reference, which Forge is meant to
+ * hold; the token would have been a credential, which it is not.
+ */
+function forgetTokens(adapter: Adapter): Adapter {
+  const linkAccount = adapter.linkAccount?.bind(adapter);
+  if (!linkAccount) return adapter;
+
+  return {
+    ...adapter,
+    linkAccount: (account) =>
+      linkAccount({
+        ...account,
+        access_token: undefined,
+        refresh_token: undefined,
+        id_token: undefined,
+        session_state: undefined,
+        expires_at: undefined,
+      }),
+  };
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
 
@@ -34,12 +69,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
    * and a later switch to database sessions needs no migration, even though the
    * JWT strategy leaves them unused today.
    */
-  adapter: DrizzleAdapter(db, {
-    usersTable: users,
-    accountsTable: accounts,
-    sessionsTable: sessions,
-    verificationTokensTable: verificationTokens,
-  }),
+  adapter: forgetTokens(
+    DrizzleAdapter(db, {
+      usersTable: users,
+      accountsTable: accounts,
+      sessionsTable: sessions,
+      verificationTokensTable: verificationTokens,
+    }),
+  ),
 
   callbacks: {
     /**

@@ -133,17 +133,21 @@ export const relationshipKind = pgEnum("relationship_kind", [
 /* -------------------------------------------------------------------------- */
 
 /**
- * Column names follow the Auth.js Drizzle adapter contract. Forge authenticates
- * with Google; `accounts` holds that login identity.
+ * Column names follow the Auth.js Drizzle adapter contract.
  *
- * Note: an OAuth *login* identity (this table) is not the same thing as a
- * connected provider *account* (`connectedAccounts`). Signing in with GitHub
- * would not automatically grant Forge the right to inventory that GitHub org.
+ * `users.id` is not Forge's invention. It is the subject issued by the
+ * HarithKavish identity service — the account's own identifier, stable across
+ * every way its owner might sign in. Under the ecosystem's identity standard the
+ * person belongs to the account platform; this row is a reference to them
+ * carrying cached display claims, and nothing here originates an identity.
  *
- * These tables are temporary. Under the ecosystem's identity standard a person
- * is owned by the Account platform, and Forge holds only its own data keyed by
- * the subject the identity service issues. They stay until that service can
- * authenticate, and no credential belongs in them meanwhile.
+ * `accounts` records which subject at the identity service a row belongs to.
+ * The token columns exist because the adapter defines them and stay empty by
+ * design — see forgetTokens in lib/auth/index.ts. No credential belongs here.
+ *
+ * Note: a *login* identity (this table) is not the same thing as a connected
+ * provider *account* (`connectedAccounts`). Signing in never grants Forge the
+ * right to inventory anything.
  */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),

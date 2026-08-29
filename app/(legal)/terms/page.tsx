@@ -42,7 +42,7 @@ export default function TermsPage() {
       <section>
         <h2 className="title-lg">Your account</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          You sign in with Google and are responsible for that account&rsquo;s
+          You sign in with your HarithKavish account and are responsible for that account&rsquo;s
           security. You must be old enough to enter a contract where you live,
           and you may only connect platform accounts you are authorised to
           access.

@@ -1,9 +1,9 @@
 /**
  * Server-side session access.
  *
- * The single boundary every page reads through. Its internals changed from a
- * mock cookie to Auth.js + Google without any caller changing, which is the
- * same seam the future HarithKavish identity platform will slot into.
+ * The single boundary every page reads through. Its internals went from a mock
+ * cookie, to Auth.js + Google, to the HarithKavish identity service — and no
+ * caller changed for any of it. That was the point of the seam.
  */
 
 import { redirect } from "next/navigation";

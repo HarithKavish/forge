@@ -3,7 +3,8 @@
  *
  * `ForgeSession` is what the application actually consumes. Keeping it separate
  * from Auth.js's own `Session` is what lets the identity provider change
- * without touching a single page: every route reads this shape, not Google's.
+ * without touching a single page: every route reads this shape, not the
+ * identity service's.
  */
 
 import type { DefaultSession } from "next-auth";
