@@ -3,8 +3,9 @@
 /**
  * Theme toggle.
  *
- * Follows the ecosystem's approach: an explicit user choice stored in
- * localStorage wins, and the system preference is only the starting point. The
+ * The choice is shared with every other harithkavish.com surface through
+ * HarithStore, so dark here is dark there. An explicit choice wins and the
+ * system preference is only the starting point. The
  * `data-theme` attribute on <html> is set by an inline script before first
  * paint (see app/layout.tsx), so there is no flash of the wrong theme.
  */
@@ -12,23 +13,33 @@
 import { useEffect, useState } from "react";
 
 import { MoonIcon, SunIcon } from "@/components/ui/icons";
+import { store, THEME_KEY } from "@/lib/ecosystem/store";
 
-const STORAGE_KEY = "forge-theme";
+const LEGACY_KEY = "forge-theme";
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    store().migrate(THEME_KEY, LEGACY_KEY);
     const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
     setTheme(current);
     setReady(true);
+
+    /* Changed on another surface — follow it rather than disagreeing. */
+    store().subscribe((key, value) => {
+      if (key !== THEME_KEY) return;
+      const next = value === "dark" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      setTheme(next);
+    });
   }, []);
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    localStorage.setItem(STORAGE_KEY, next);
+    store().set(THEME_KEY, next);
     setTheme(next);
   }
 
