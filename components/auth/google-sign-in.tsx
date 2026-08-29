@@ -1,8 +1,13 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
 import { signInWithGoogleAction } from "@/lib/auth/actions";
+import { readEcosystemUser } from "@/lib/ecosystem/store";
+
+/** One attempt per tab, so a stale ecosystem value cannot cause a redirect loop. */
+const ATTEMPTED = "forge.autoContinue";
 
 /** Google's four-colour mark, as their branding guidance requires on this button. */
 function GoogleMark() {
@@ -51,8 +56,32 @@ function SubmitButton() {
  * /projects lands back on /projects rather than the dashboard.
  */
 export function GoogleSignIn({ next }: { next?: string }) {
+  const form = useRef<HTMLFormElement>(null);
+
+  /*
+   * Someone already signed in elsewhere in the ecosystem should not be asked
+   * again. Forge cannot trust that value as a session, so it does the real
+   * thing: it starts the Google round trip, which returns without a prompt
+   * while their Google session is live and lands them where they were going.
+   *
+   * Attempted once per tab. Without the guard, an ecosystem value that no
+   * longer matches a live Google session — revoked access, a signed-out Google
+   * account — would bounce between here and Google for as long as the tab was
+   * open.
+   */
+  useEffect(() => {
+    if (!readEcosystemUser()) return;
+    try {
+      if (sessionStorage.getItem(ATTEMPTED) === "1") return;
+      sessionStorage.setItem(ATTEMPTED, "1");
+    } catch {
+      return; // storage blocked: leave the button for them to press
+    }
+    form.current?.requestSubmit();
+  }, []);
+
   return (
-    <form action={signInWithGoogleAction}>
+    <form action={signInWithGoogleAction} ref={form}>
       {next ? <input type="hidden" name="next" value={next} /> : null}
       <SubmitButton />
     </form>
