@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 
 import { signOutAction } from "@/lib/auth/actions";
 import { IdentitySync } from "@/components/ecosystem/identity-sync";
+import { useEcosystemPicture } from "@/lib/ecosystem/use-picture";
 import { SignOutButton } from "@/components/ecosystem/sign-out-button";
 import type { ForgeSession } from "@/lib/auth/types";
 import {
@@ -82,16 +83,20 @@ function NavList({
 }
 
 function SessionPanel({ session }: { session: ForgeSession }) {
+  // The shared value when there is one, so a picture changed on the account
+  // site reaches this nav as quickly as it reaches every other surface.
+  const picture = useEcosystemPicture(session.image);
+
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-3">
       {/* Tells the rest of the ecosystem who is here, so they stop asking. */}
       <IdentitySync name={session.name} image={session.image} />
       <div className="flex min-w-0 items-center gap-2.5 px-1">
         <span className="relative flex h-8 w-8 flex-none" aria-hidden="true">
-          {session.image ? (
+          {picture ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={session.image}
+              src={picture}
               alt=""
               referrerPolicy="no-referrer"
               className="h-8 w-8 rounded-full border border-border object-cover"

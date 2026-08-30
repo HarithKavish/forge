@@ -54,14 +54,20 @@ export const authConfig = {
        * might sign in. It is what Forge keys a user on, so that changing how
        * someone authenticates never changes who they are here.
        */
-      profile(profile: { sub: string; name?: string; preferred_username?: string }) {
+      profile(profile: {
+        sub: string;
+        name?: string;
+        preferred_username?: string;
+        picture?: string | null;
+      }) {
         return {
           id: profile.sub,
           name: profile.name ?? profile.preferred_username ?? "Forge user",
           // The identity service does not hand out email addresses, and Forge
           // has never needed one. `users.email` stays for the adapter's sake.
           email: `${profile.sub}@accounts.harithkavish.com`,
-          image: null,
+          // Whatever the account chose. Null is the placeholder, not a failure.
+          image: typeof profile.picture === "string" ? profile.picture : null,
         };
       },
     },

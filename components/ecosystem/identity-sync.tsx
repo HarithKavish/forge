@@ -2,18 +2,24 @@
 
 import { useEffect } from "react";
 
-import { store, USER_KEY } from "@/lib/ecosystem/store";
+import { readEcosystemUser, store, USER_KEY } from "@/lib/ecosystem/store";
 
 /**
- * Publishes the signed-in reader to the ecosystem's shared store.
+ * Fills the ecosystem's shared identity, and only when it is empty.
  *
- * Forge holds a real session; the other surfaces hold none, so without this
- * they would show a signed-out header to someone who is plainly signed in here.
- * Writing it means the picture appears on nexus, the blog and the rest, and a
- * reader arriving at any of them is not asked to sign in again.
+ * It used to write on every render, unconditionally. Forge had no picture to
+ * write — the identity service did not hand one out — so it wrote an empty one,
+ * and opening Forge cleared the picture on every other surface. Changing it
+ * again brought it back everywhere except here, until Forge was opened and wiped
+ * it once more.
  *
- * This publishes identity, not authority. Nothing downstream may treat it as
- * permission — see lib/ecosystem/store.ts.
+ * The account service owns this value: it writes it at sign-in and again
+ * whenever the name or picture changes, and it is the only place that knows the
+ * truth. Forge's job is to leave it alone.
+ *
+ * What remains is a gap-filler. Someone whose cookie was cleared but whose Forge
+ * session survives would otherwise look signed out everywhere else, so a missing
+ * value is written once. An existing one is never touched.
  */
 export function IdentitySync({
   name,
@@ -23,6 +29,7 @@ export function IdentitySync({
   image?: string | null;
 }) {
   useEffect(() => {
+    if (readEcosystemUser()) return;
     store().set(USER_KEY, JSON.stringify({ name, picture: image ?? "" }));
   }, [name, image]);
 
