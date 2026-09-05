@@ -19,9 +19,9 @@ function safeDestination(value: FormDataEntryValue | null): string {
   return next.startsWith("/") && !next.startsWith("//") ? next : "/home";
 }
 
-export async function signInWithGoogleAction(formData: FormData): Promise<void> {
-  // Throws a redirect to Google; nothing after this line runs on success.
-  await signIn("google", { redirectTo: safeDestination(formData.get("next")) });
+export async function signInAction(formData: FormData): Promise<void> {
+  // Throws a redirect to the identity service; nothing after this runs on success.
+  await signIn("harithkavish", { redirectTo: safeDestination(formData.get("next")) });
 }
 
 export async function signOutAction(): Promise<void> {

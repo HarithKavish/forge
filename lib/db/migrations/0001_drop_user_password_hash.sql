@@ -1,0 +1,12 @@
+-- Forge never authenticated with a password. Only Google is configured as a
+-- provider, and `password_hash` was referenced nowhere outside the schema
+-- declaration -- it was a credential column waiting for a credential.
+--
+-- Under the ecosystem's identity standard, credentials belong to the Account
+-- platform. Forge holding a password column made it a credential store on
+-- paper for people whose account lives elsewhere, and the column would have
+-- had to be migrated or explained later either way.
+--
+-- Dropping it is safe: no row has ever held a value, because nothing could
+-- write one.
+ALTER TABLE "users" DROP COLUMN IF EXISTS "password_hash";

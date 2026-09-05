@@ -1,9 +1,9 @@
 /**
  * Server-side session access.
  *
- * The single boundary every page reads through. Its internals changed from a
- * mock cookie to Auth.js + Google without any caller changing, which is the
- * same seam the future HarithKavish identity platform will slot into.
+ * The single boundary every page reads through. Its internals went from a mock
+ * cookie, to Auth.js + Google, to the HarithKavish identity service — and no
+ * caller changed for any of it. That was the point of the seam.
  */
 
 import { redirect } from "next/navigation";
@@ -20,8 +20,8 @@ export async function getSession(): Promise<ForgeSession | null> {
 
   return {
     userId: session.user.id,
-    email: session.user.email ?? "",
-    name: session.user.name ?? session.user.email ?? "Forge user",
+    username: session.user.username ?? null,
+    name: session.user.name ?? "Forge user",
     image: session.user.image,
     workspaceId: session.workspaceId,
     workspaceName: session.workspaceName ?? "Personal workspace",

@@ -33,7 +33,7 @@ export default async function SecuritySettingsPage() {
       >
         <dl>
           <DetailRow label="Method">
-            <span className="pill pill--neutral">Google OAuth 2.0</span>
+            <span className="pill pill--neutral">HarithKavish identity service</span>
           </DetailRow>
           <DetailRow label="Managed by">Auth.js</DetailRow>
           <DetailRow label="Storage">HTTP-only, Secure cookie</DetailRow>

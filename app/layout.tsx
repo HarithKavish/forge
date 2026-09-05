@@ -30,7 +30,9 @@ export const viewport: Viewport = {
  */
 const THEME_SCRIPT = `
 try {
-  var stored = localStorage.getItem('forge-theme');
+  var stored = window.HarithStore
+    ? window.HarithStore.get('theme')
+    : localStorage.getItem('forge-theme');
   var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
 } catch (e) {
@@ -50,8 +52,11 @@ export default function RootLayout({
             globals.css and no longer restates the shared ones. */}
         <link
           rel="stylesheet"
-          href="https://harithkavish.com/design-system/v1.0.0/tokens.css?v=20260829.2"
+          href="https://harithkavish.com/design-system/v1.0.0/tokens.css?v=20260829.3"
         />
+        {/* The ecosystem's shared state. Must run before the theme script,
+            which reads the chosen theme from it. */}
+        <script src="https://harithkavish.com/design-system/v1.0.0/harith-store.js?v=20260829.3" />
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>{children}</body>

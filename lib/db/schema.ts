@@ -133,13 +133,21 @@ export const relationshipKind = pgEnum("relationship_kind", [
 /* -------------------------------------------------------------------------- */
 
 /**
- * Column names follow the Auth.js Drizzle adapter contract so OAuth sign-in can
- * be added later without a migration. V1 authenticates with `passwordHash`;
- * `accounts` stays empty until an OAuth login provider is enabled.
+ * Column names follow the Auth.js Drizzle adapter contract.
  *
- * Note: an OAuth *login* identity (this table) is not the same thing as a
- * connected provider *account* (`connectedAccounts`). Signing in with GitHub
- * would not automatically grant Forge the right to inventory that GitHub org.
+ * `users.id` is not Forge's invention. It is the subject issued by the
+ * HarithKavish identity service — the account's own identifier, stable across
+ * every way its owner might sign in. Under the ecosystem's identity standard the
+ * person belongs to the account platform; this row is a reference to them
+ * carrying cached display claims, and nothing here originates an identity.
+ *
+ * `accounts` records which subject at the identity service a row belongs to.
+ * The token columns exist because the adapter defines them and stay empty by
+ * design — see forgetTokens in lib/auth/index.ts. No credential belongs here.
+ *
+ * Note: a *login* identity (this table) is not the same thing as a connected
+ * provider *account* (`connectedAccounts`). Signing in never grants Forge the
+ * right to inventory anything.
  */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -147,8 +155,6 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   image: text("image"),
-  /** Argon2id/bcrypt digest. Null for users who only ever used OAuth. */
-  passwordHash: text("password_hash"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

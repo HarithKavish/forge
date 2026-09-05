@@ -14,6 +14,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOutAction } from "@/lib/auth/actions";
+import { IdentitySync } from "@/components/ecosystem/identity-sync";
+import { useEcosystemPicture } from "@/lib/ecosystem/use-picture";
+import { SignOutButton } from "@/components/ecosystem/sign-out-button";
 import type { ForgeSession } from "@/lib/auth/types";
 import {
   AlertsIcon,
@@ -80,28 +83,45 @@ function NavList({
 }
 
 function SessionPanel({ session }: { session: ForgeSession }) {
+  // The shared value when there is one, so a picture changed on the account
+  // site reaches this nav as quickly as it reaches every other surface.
+  const picture = useEcosystemPicture(session.image);
+
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-3">
+      {/* Tells the rest of the ecosystem who is here, so they stop asking. */}
+      <IdentitySync name={session.name} image={session.image} />
       <div className="flex min-w-0 items-center gap-2.5 px-1">
-        <span
-          className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-border bg-surface-strong text-[0.72rem] font-[650] text-muted"
-          aria-hidden="true"
-        >
-          {session.name.slice(0, 1).toUpperCase()}
+        <span className="relative flex h-8 w-8 flex-none" aria-hidden="true">
+          {picture ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={picture}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="h-8 w-8 rounded-full border border-border object-cover"
+            />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-strong text-[0.72rem] font-[650] text-muted">
+              {session.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
         </span>
         <span className="flex min-w-0 flex-col leading-tight">
           <span className="truncate text-[0.86rem] font-[650]">{session.name}</span>
-          <span className="truncate text-[0.76rem] text-muted">{session.email}</span>
+          {/* The handle, when the account has one. Never the account id: that
+              is an internal identifier and means nothing to the person. */}
+          {session.username ? (
+            <span className="truncate text-[0.76rem] text-muted">@{session.username}</span>
+          ) : null}
         </span>
       </div>
 
       <ThemeToggle />
 
       <form action={signOutAction}>
-        <button type="submit" className="btn btn--ghost w-full justify-start">
-          Sign out
-        </button>
-      </form>
+          <SignOutButton />
+        </form>
     </div>
   );
 }

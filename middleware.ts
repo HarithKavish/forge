@@ -17,13 +17,12 @@ import { authConfig } from "@/lib/auth/config";
 
 const { auth } = NextAuth(authConfig);
 
-/** Reachable without a session. Everything else requires one. */
 /**
- * Reachable without a session. The legal pages are public because Google and
- * Vercel fetch them while reviewing the app, and a redirect to /login would
- * read as a broken link.
+ * Reachable without a session. The legal and documentation pages are public
+ * because Google and Vercel fetch them while reviewing the app, and a redirect
+ * to /login would read as a broken link.
  */
-const PUBLIC_PATHS = ["/login", "/privacy", "/terms"];
+const PUBLIC_PATHS = ["/login", "/privacy", "/terms", "/docs"];
 
 export default auth((request) => {
   const { pathname, search } = request.nextUrl;
@@ -42,8 +41,11 @@ export default auth((request) => {
   );
 
   if (isPublic) {
-    // A signed-in user has no reason to see the login page.
-    if (authenticated) {
+    // A signed-in user has no reason to see the login page. The other public
+    // pages are ordinary reading material, though, and bouncing someone off
+    // /privacy or /docs just because they happen to be signed in would break
+    // the app's own footer links.
+    if (authenticated && pathname === "/login") {
       return NextResponse.redirect(new URL("/home", request.url));
     }
     return NextResponse.next();

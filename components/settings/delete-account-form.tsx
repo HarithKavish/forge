@@ -11,24 +11,24 @@ const INITIAL: DeleteAccountState = {};
 
 /**
  * Deleting is irreversible, so the button stays disabled until the user has
- * typed their own address — deliberate friction, proportional to the
+ * typed their own user ID — deliberate friction, proportional to the
  * consequence.
  */
-export function DeleteAccountForm({ email }: { email: string }) {
+export function DeleteAccountForm({ confirm }: { confirm: string }) {
   const [state, formAction, pending] = useActionState(deleteAccountAction, INITIAL);
   const [typed, setTyped] = useState("");
 
-  const matches = typed.trim().toLowerCase() === email.toLowerCase();
+  const matches = typed.trim().toLowerCase() === confirm.toLowerCase();
 
   return (
     <form action={formAction} className="flex flex-col gap-3">
       <div>
-        <label className="label" htmlFor="confirmEmail">
-          Type <span className="font-mono">{email}</span> to confirm
+        <label className="label" htmlFor="confirmIdentity">
+          Type <span className="font-mono">{confirm}</span> to confirm
         </label>
         <input
-          id="confirmEmail"
-          name="confirmEmail"
+          id="confirmIdentity"
+          name="confirmIdentity"
           className="field"
           autoComplete="off"
           spellCheck={false}
