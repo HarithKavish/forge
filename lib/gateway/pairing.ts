@@ -23,9 +23,9 @@
  * the same sessionRef for a given token without ever exchanging one.
  */
 
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
-import { env } from "@/lib/env";
+import { sign } from "./hmac";
 
 const TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -36,20 +36,6 @@ export interface PairingClaims {
   projectId: string | null;
   label: string | null;
   exp: number;
-}
-
-function gatewaySecret(): string {
-  const secret = env().GATEWAY_SHARED_SECRET;
-  if (!secret) {
-    throw new Error(
-      "GATEWAY_SHARED_SECRET is not set. Required to mint or verify Worldview pairing tokens.",
-    );
-  }
-  return secret;
-}
-
-function sign(payload: string): string {
-  return createHmac("sha256", gatewaySecret()).update(payload).digest("base64url");
 }
 
 export function mintPairingToken(claims: Omit<PairingClaims, "exp">): string {

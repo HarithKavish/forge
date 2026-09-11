@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 
 import { requireSession } from "@/lib/auth/session";
 import { listAgentSessions, listProjectRecords } from "@/lib/data/queries";
-import { revokeAgentSessionAction } from "@/lib/data/actions";
-import { agentProviderLabel, relativeTime } from "@/lib/format";
 import { env } from "@/lib/env";
-import { EmptyState, PageHeader, SectionCard } from "@/components/ui/page";
+import { PageHeader, SectionCard } from "@/components/ui/page";
 import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
 import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
+import { SessionList } from "@/components/agent-sessions/session-list";
 
 export const metadata: Metadata = {
   title: "Worldview",
@@ -22,10 +21,11 @@ export const metadata: Metadata = {
  *  - "Register a session by hand" (step 1) still exists for testing without
  *    wiring up a hook at all.
  *
- * Neither shows presence yet — that's the WebSocket fan-out in step 4. Every
- * session here shows as "Registered" because that is genuinely all Forge
- * knows about it today, and online/offline is never stored here even once
- * it arrives (docs/WORLDVIEW.md §4).
+ * SessionList connects to forge-gateway's WebSocket endpoint client-side
+ * (step 4) to layer live presence on top of the registrations this page
+ * fetches server-side. A session with no live presence yet shows
+ * "Registered" -- that's an honest state (a manual registration, or an
+ * agent that hasn't connected), not a loading placeholder.
  */
 export default async function WorldviewPage() {
   const session = await requireSession();
@@ -33,9 +33,6 @@ export default async function WorldviewPage() {
     listAgentSessions(session.workspaceId),
     listProjectRecords(session.workspaceId),
   ]);
-
-  const projectName = (projectId?: string) =>
-    projects.find((p) => p.id === projectId)?.name;
 
   const active = sessions.filter((s) => s.status === "active");
   const gatewayUrl = env().GATEWAY_URL;
@@ -45,7 +42,7 @@ export default async function WorldviewPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Worldview"
-        description="Which coding-agent sessions are registered, and to what. No presence yet — that arrives with the gateway's WebSocket fan-out, docs/WORLDVIEW.md §5."
+        description="Which coding-agent sessions are registered, and whether they're online right now."
       />
 
       <SectionCard
@@ -63,43 +60,7 @@ export default async function WorldviewPage() {
       </SectionCard>
 
       <SectionCard title="Registered sessions">
-        {active.length === 0 ? (
-          <EmptyState
-            title="No sessions registered yet"
-            description="Register one above to see it here."
-          />
-        ) : (
-          <ul className="flex flex-col divide-y divide-border">
-            {active.map((agentSession) => (
-              <li
-                key={agentSession.id}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium">
-                    {agentSession.label || agentProviderLabel(agentSession.provider)}
-                  </p>
-                  <p className="mt-0.5 text-sm text-muted">
-                    {agentProviderLabel(agentSession.provider)}
-                    {" · "}
-                    {projectName(agentSession.projectId) ?? "No project"}
-                    {" · "}
-                    Registered {relativeTime(agentSession.createdAt)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="pill pill--neutral">Registered</span>
-                  <form action={revokeAgentSessionAction}>
-                    <input type="hidden" name="sessionId" value={agentSession.id} />
-                    <button type="submit" className="btn btn--sm btn--ghost">
-                      Revoke
-                    </button>
-                  </form>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <SessionList sessions={active} projects={projects} gatewayUrl={gatewayUrl} />
       </SectionCard>
     </div>
   );

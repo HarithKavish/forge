@@ -192,6 +192,8 @@ export interface AgentSession {
   ownerId: string;
   projectId?: string;
   provider: AgentProvider;
+  /** Opaque, safe to show -- never a credential. Correlates with a live PresenceEntry. */
+  sessionRef: string;
   label?: string;
   status: AgentSessionStatus;
   createdAt: string;

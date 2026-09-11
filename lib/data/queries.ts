@@ -142,6 +142,7 @@ const toAgentSession = (row: AgentSessionRow): AgentSession => ({
   ownerId: row.ownerId,
   projectId: row.projectId ?? undefined,
   provider: row.provider,
+  sessionRef: row.sessionRef,
   label: row.label ?? undefined,
   status: row.status,
   createdAt: row.createdAt.toISOString(),
