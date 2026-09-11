@@ -178,6 +178,25 @@ export interface WorkspaceOverview {
   resourcesWithoutCostData: number;
 }
 
+export type AgentProvider = "claude" | "codex" | "gemini" | "other";
+export type AgentSessionStatus = "active" | "revoked";
+
+/**
+ * A registered coding-agent session, for Worldview's presence map. This is
+ * the registration only — no online/offline state, no activity. See
+ * docs/WORLDVIEW.md §4.
+ */
+export interface AgentSession {
+  id: string;
+  workspaceId: string;
+  ownerId: string;
+  projectId?: string;
+  provider: AgentProvider;
+  label?: string;
+  status: AgentSessionStatus;
+  createdAt: string;
+}
+
 /** A project row enriched with the counts the listing needs. */
 export interface ProjectSummary extends Project {
   serviceCount: number;

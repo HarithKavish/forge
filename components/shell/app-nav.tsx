@@ -27,6 +27,7 @@ import {
   ProjectsIcon,
   ResourcesIcon,
   SettingsIcon,
+  WorldviewIcon,
 } from "@/components/ui/icons";
 import { Brand } from "./brand";
 import { ThemeToggle } from "./theme-toggle";
@@ -154,6 +155,7 @@ export function AppNav({
     { label: "Home", href: "/home", icon: HomeIcon },
     { label: "Projects", href: "/projects", icon: ProjectsIcon },
     { label: "Resources", href: "/resources", icon: ResourcesIcon },
+    { label: "Worldview", href: "/worldview", icon: WorldviewIcon },
     { label: "Integrations", href: "/integrations", icon: IntegrationsIcon },
     { label: "Alerts", href: "/alerts", icon: AlertsIcon, badge: attentionCount },
   ];

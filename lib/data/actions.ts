@@ -14,6 +14,10 @@ import { redirect } from "next/navigation";
 
 import { requireSession } from "@/lib/auth/session";
 import {
+  createAgentSession,
+  revokeAgentSession,
+} from "@/lib/core/agent-sessions";
+import {
   deleteConnectedAccount,
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
@@ -29,6 +33,12 @@ import { runDiscovery } from "@/lib/sync/discover";
 export interface ProjectFormState {
   error?: string;
 }
+
+export interface AgentSessionFormState {
+  error?: string;
+}
+
+const AGENT_PROVIDERS = ["claude", "codex", "gemini", "other"] as const;
 
 /** Refresh every view that shows inventory counts. */
 function revalidateInventory(): void {
@@ -142,6 +152,51 @@ export async function createProjectAction(
 
   revalidateInventory();
   redirect(`/projects/${project.id}`);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — agent sessions (docs/WORLDVIEW.md)                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Manual registration — the gateway from docs/WORLDVIEW.md §5 doesn't exist
+ * yet, so this is the only way a session gets a row today. It proves the same
+ * registration path the gateway will eventually drive automatically.
+ */
+export async function registerAgentSessionAction(
+  _prev: AgentSessionFormState,
+  formData: FormData,
+): Promise<AgentSessionFormState> {
+  const session = await requireSession();
+  const provider = String(formData.get("provider") ?? "");
+  const projectId = String(formData.get("projectId") ?? "") || null;
+  const label = String(formData.get("label") ?? "").trim();
+
+  if (!AGENT_PROVIDERS.includes(provider as (typeof AGENT_PROVIDERS)[number])) {
+    return { error: "Choose which agent provider this session is." };
+  }
+  if (label.length > 60) {
+    return { error: "Labels are limited to 60 characters." };
+  }
+
+  await createAgentSession(session.workspaceId, session.userId, {
+    provider: provider as (typeof AGENT_PROVIDERS)[number],
+    projectId,
+    label,
+  });
+
+  revalidatePath("/worldview");
+  redirect("/worldview");
+}
+
+export async function revokeAgentSessionAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const sessionId = String(formData.get("sessionId") ?? "");
+  if (!sessionId) redirect("/worldview");
+
+  await revokeAgentSession(session.workspaceId, sessionId);
+  revalidatePath("/worldview");
+  redirect("/worldview");
 }
 
 /* -------------------------------------------------------------------------- */

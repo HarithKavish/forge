@@ -10,6 +10,10 @@
  */
 
 import {
+  listAgentSessionRows,
+  type AgentSessionRow,
+} from "@/lib/core/agent-sessions";
+import {
   getConnectedAccount as coreGetAccount,
   listAccountsForProvider as coreAccountsForProvider,
   listConnectedAccounts as coreListAccounts,
@@ -33,6 +37,7 @@ import {
 } from "@/lib/core/resources";
 import { getProvider, listProviderInfo, providerName } from "@/lib/providers/catalogue";
 import type {
+  AgentSession,
   Alert,
   ConnectedAccount,
   Environment,
@@ -129,6 +134,17 @@ const toEnvironment = (row: EnvironmentRow): Environment => ({
   projectId: row.projectId,
   name: row.name,
   kind: row.kind,
+});
+
+const toAgentSession = (row: AgentSessionRow): AgentSession => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  ownerId: row.ownerId,
+  projectId: row.projectId ?? undefined,
+  provider: row.provider,
+  label: row.label ?? undefined,
+  status: row.status,
+  createdAt: row.createdAt.toISOString(),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -267,6 +283,14 @@ export async function listAllServices(workspaceId: string): Promise<Service[]> {
 
 export async function listAllEnvironments(workspaceId: string): Promise<Environment[]> {
   return (await listEnvironmentRows(workspaceId)).map(toEnvironment);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — agent sessions (docs/WORLDVIEW.md)                             */
+/* -------------------------------------------------------------------------- */
+
+export async function listAgentSessions(workspaceId: string): Promise<AgentSession[]> {
+  return (await listAgentSessionRows(workspaceId)).map(toAgentSession);
 }
 
 /* -------------------------------------------------------------------------- */
