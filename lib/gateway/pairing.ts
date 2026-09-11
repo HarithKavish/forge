@@ -1,28 +1,33 @@
 /**
  * Worldview pairing tokens.
  *
- * A pairing token is how a not-yet-connected agent session proves it was
- * requested by a signed-in Forge user, without forge-gateway ever holding a
- * database credential or a long-lived master secret in a hook config. See
- * docs/WORLDVIEW.md §5.1 and §7.
+ * A pairing token is how a real agent session proves it was requested by a
+ * signed-in Forge user, without forge-gateway ever holding a database
+ * credential. See docs/WORLDVIEW.md §5.1 and §7.
  *
- * Stateless by design: the claims are HMAC-signed with GATEWAY_SHARED_SECRET
- * (shared with forge-gateway) rather than stored in a table. That also means
- * there is no server-side "used" flag -- a token replayed within its TTL
- * mints a second agent_sessions row with the same claims rather than being
- * rejected outright. Bounded by a short TTL and scoped to the workspace that
- * minted it, that is a low-severity, self-inflicted duplicate at worst, not
- * a way to reach another workspace's data. If that tradeoff stops being
- * acceptable, single-use enforcement needs actual state (e.g. a short-lived
- * row keyed by a token id) -- there is no way to add it to a purely stateless
- * scheme.
+ * Used directly, and repeatedly, as the bearer credential a native Claude
+ * Code HTTP hook sends on every event for as long as that hook config lives
+ * -- there is no separate short-lived "ingest token" exchanged after the
+ * first use, because a native http hook has no way to cache one between
+ * invocations (each hook firing is a fresh process). The token is the
+ * credential, for its whole lifetime.
+ *
+ * That has a real cost: there is no way to revoke a single leaked token
+ * early short of rotating GATEWAY_SHARED_SECRET, which invalidates every
+ * token everywhere. Forge's own session cookies already accept the
+ * identical tradeoff (docs/AUTH.md "Sessions") -- long-lived, no central
+ * revocation list, ends at expiry or a secret rotation.
+ *
+ * Stateless by design: the claims are HMAC-signed rather than stored in a
+ * table, and `deriveSessionRef` below means Forge and forge-gateway agree on
+ * the same sessionRef for a given token without ever exchanging one.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { env } from "@/lib/env";
 
-const TTL_MS = 15 * 60 * 1000;
+const TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 export interface PairingClaims {
   workspaceId: string;
@@ -67,4 +72,13 @@ export function verifyPairingToken(token: string): PairingClaims {
   const claims = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as PairingClaims;
   if (claims.exp < Date.now()) throw new Error("Pairing token has expired");
   return claims;
+}
+
+/**
+ * The same token always derives the same sessionRef -- computed here and,
+ * independently, in forge-gateway's src/pairing.ts, from the identical raw
+ * token string. Must stay byte-for-byte identical to that implementation.
+ */
+export function deriveSessionRef(token: string): string {
+  return `sr_${createHash("sha256").update(token).digest("hex").slice(0, 32)}`;
 }

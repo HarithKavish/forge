@@ -23,6 +23,7 @@ export async function listAgentSessionRows(workspaceId: string): Promise<AgentSe
     .orderBy(desc(agentSessions.createdAt));
 }
 
+/** Manual registration ("Register a session by hand" on /worldview) -- a random opaque ref. */
 export async function createAgentSession(
   workspaceId: string,
   ownerId: string,
@@ -40,13 +41,55 @@ export async function createAgentSession(
       projectId: input.projectId || null,
       provider: input.provider,
       label: input.label || null,
-      // Opaque, and eventually gateway-issued (docs/WORLDVIEW.md §5). Minted
-      // here for now since there is no gateway yet — a manually registered
-      // session is still a real, addressable registration.
       sessionRef: `sr_${randomUUID()}`,
       status: "active",
     })
     .returning();
+  if (!row) throw new Error("Failed to register the agent session");
+  return row;
+}
+
+/**
+ * Registration via forge-gateway's pairing-token callback
+ * (app/api/gateway/sessions/route.ts). `sessionRef` is passed in rather than
+ * generated here -- it's deterministically derived from the pairing token
+ * (lib/gateway/pairing.ts `deriveSessionRef`), the same value forge-gateway
+ * already computed and started recording presence under before this call
+ * ever happens.
+ *
+ * Idempotent: forge-gateway confirms once per session by its own accounting,
+ * but that accounting resets on a Durable Object eviction, so this can see
+ * the same sessionRef again. onConflictDoNothing makes a repeat confirm a
+ * no-op rather than a unique-constraint error.
+ */
+export async function registerGatewaySession(
+  workspaceId: string,
+  ownerId: string,
+  sessionRef: string,
+  input: {
+    provider: AgentSessionRow["provider"];
+    projectId?: string | null;
+    label?: string | null;
+  },
+): Promise<AgentSessionRow> {
+  await db
+    .insert(agentSessions)
+    .values({
+      workspaceId,
+      ownerId,
+      projectId: input.projectId || null,
+      provider: input.provider,
+      label: input.label || null,
+      sessionRef,
+      status: "active",
+    })
+    .onConflictDoNothing({ target: agentSessions.sessionRef });
+
+  const [row] = await db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.sessionRef, sessionRef))
+    .limit(1);
   if (!row) throw new Error("Failed to register the agent session");
   return row;
 }

@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Mints a Worldview pairing token (docs/WORLDVIEW.md §5.1, §7) and shows it
- * once. Setup after that point -- wiring the token into a Claude Code hook
- * config -- happens outside Forge, in forge-gateway; this only gets someone
- * the token and points them there.
+ * Mints a Worldview pairing token (docs/WORLDVIEW.md §5.1, §7) and shows the
+ * exact settings.json to paste it into. The token is a native Claude Code
+ * `type: "http"` hook's bearer credential directly -- there's no separate
+ * setup script, because a native http hook has nowhere to run one.
  */
 
 import { useActionState, useState } from "react";
@@ -25,48 +25,89 @@ export function PairSessionForm({
   gatewayUrl?: string;
 }) {
   const [state, formAction, pending] = useActionState(mintPairingTokenAction, INITIAL);
-  const [copied, setCopied] = useState(false);
+  const [copiedExport, setCopiedExport] = useState(false);
+  const [copiedConfig, setCopiedConfig] = useState(false);
 
   if (state.token) {
-    const lines = [
-      `export WORLDVIEW_PAIRING_TOKEN="${state.token}"`,
-      `export WORLDVIEW_GATEWAY_URL="${gatewayUrl || "<your forge-gateway URL>"}"`,
-    ].join("\n");
+    const exportLine = `export WORLDVIEW_PAIRING_TOKEN="${state.token}"`;
+    const url = `${gatewayUrl || "<your forge-gateway URL>"}/events/claude`;
+    const hookEntry = (event: string) => `    "${event}": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "${url}",
+            "headers": { "Authorization": "Bearer $WORLDVIEW_PAIRING_TOKEN" },
+            "allowedEnvVars": ["WORLDVIEW_PAIRING_TOKEN"]
+          }
+        ]
+      }
+    ]`;
+    const config = `{
+  "hooks": {
+${["SessionStart", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"]
+  .map(hookEntry)
+  .join(",\n")}
+  }
+}`;
 
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-muted">
-          This token is shown once and expires in 15 minutes. Set it where
-          your agent runs, then follow forge-gateway&rsquo;s README to wire up
-          the hook.
+          This token is shown once. It stays valid for 90 days and acts as a
+          long-lived credential — treat it like one. There is no way to
+          revoke it individually before then; regenerating here does not
+          invalidate the old one.
         </p>
-        <pre className="overflow-x-auto rounded-[var(--radius-inner)] border border-border bg-surface-soft px-3 py-2.5 text-[0.82rem]">
-          {lines}
-        </pre>
-        <div className="flex flex-wrap gap-2">
+
+        <div>
+          <p className="mb-1.5 text-[0.8rem] text-muted">
+            1. Set it where your agent runs (shell profile, or your process
+            manager&rsquo;s env config):
+          </p>
+          <pre className="overflow-x-auto rounded-[var(--radius-inner)] border border-border bg-surface-soft px-3 py-2.5 text-[0.82rem]">
+            {exportLine}
+          </pre>
           <button
             type="button"
-            className="btn btn--sm"
+            className="btn btn--sm mt-1.5"
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(lines);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
+                await navigator.clipboard.writeText(exportLine);
+                setCopiedExport(true);
+                setTimeout(() => setCopiedExport(false), 2000);
               } catch {
                 // Clipboard access can be denied; the text is still selectable.
               }
             }}
           >
-            {copied ? "Copied" : "Copy"}
+            {copiedExport ? "Copied" : "Copy"}
           </button>
-          <a
-            href="https://github.com/HarithKavish/forge-gateway#readme"
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn--sm btn--ghost"
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[0.8rem] text-muted">
+            2. Add to <code>.claude/settings.json</code>:
+          </p>
+          <pre className="overflow-x-auto rounded-[var(--radius-inner)] border border-border bg-surface-soft px-3 py-2.5 text-[0.78rem] leading-relaxed">
+            {config}
+          </pre>
+          <button
+            type="button"
+            className="btn btn--sm mt-1.5"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(config);
+                setCopiedConfig(true);
+                setTimeout(() => setCopiedConfig(false), 2000);
+              } catch {
+                // Clipboard access can be denied; the text is still selectable.
+              }
+            }}
           >
-            forge-gateway setup
-          </a>
+            {copiedConfig ? "Copied" : "Copy"}
+          </button>
         </div>
       </div>
     );
