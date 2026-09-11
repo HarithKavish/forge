@@ -60,6 +60,11 @@ export function SessionList({
     async function connect() {
       if (stopped.current) return;
 
+      // A previous connection's proactive-refresh timer would otherwise
+      // outlive it and later close whatever socket happens to be current --
+      // clear it before this attempt schedules its own.
+      clearTimeout(proactiveTimer);
+
       let token: string;
       try {
         const response = await fetch("/api/worldview/viewer-token");
