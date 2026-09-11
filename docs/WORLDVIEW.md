@@ -22,7 +22,7 @@ there" — nothing more.
   file or running tests, not the diff or the output. This is a hard
   requirement, not a v1-scope cut — see §4.
 - **Read-only with respect to the agents themselves**, in the same sense
-  Forge is read-only with respect to infrastructure (ARCHITECTURE.md §1):
+  Forge is read-only with respect to infrastructure (ARCHITECTURE.md §11):
   Worldview observes hook events; it does not configure, restart, or kill
   anything running on the originating machine.
 
