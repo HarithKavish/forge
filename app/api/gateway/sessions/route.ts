@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { registerGatewaySession } from "@/lib/core/agent-sessions";
+import { safeEqual } from "@/lib/crypto/secrets";
 import { env } from "@/lib/env";
 import { deriveSessionRef, verifyPairingToken } from "@/lib/gateway/pairing";
 
@@ -24,8 +25,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Gateway integration not configured" }, { status: 503 });
   }
 
-  const auth = request.headers.get("Authorization");
-  if (auth !== `Bearer ${secret}`) {
+  const auth = request.headers.get("Authorization") ?? "";
+  if (!safeEqual(auth, `Bearer ${secret}`)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
