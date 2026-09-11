@@ -1,22 +1,26 @@
 "use client";
 
 /**
- * The registered-sessions list, with live presence layered on top.
+ * The Worldview canvas: registered sessions grouped by project ("islands"),
+ * shown as avatar tokens with live presence layered on top.
  *
  * Connects directly to forge-gateway's WebSocket endpoint (not through
  * Forge's own server -- see docs/WORLDVIEW.md §5.4), using a short-lived
  * viewer token fetched from /api/worldview/viewer-token. A session shows
- * "Registered" until the gateway actually reports presence for it, which
- * may be never (a manually registered session, or one whose agent hasn't
- * connected yet) -- that's the honest state, not a loading placeholder.
+ * "docked" (offline look, no pulse) until the gateway actually reports it
+ * online, which may be never (a manually registered session, or one whose
+ * agent hasn't connected yet) -- that's the honest state, not a loading
+ * placeholder.
  */
 
 import { useEffect, useRef, useState } from "react";
 
 import { revokeAgentSessionAction } from "@/lib/data/actions";
 import { agentProviderLabel, relativeTime } from "@/lib/format";
+import { personColorStyle } from "@/lib/color";
 import type { AgentSession, Project } from "@/lib/data/types";
-import { EmptyState } from "@/components/ui/page";
+import { EmptyState, SectionCard } from "@/components/ui/page";
+import { ProviderIcon } from "@/components/agent-sessions/provider-icon";
 
 type PresenceState = "online" | "offline";
 interface PresenceEntry {
@@ -41,10 +45,18 @@ export function SessionList({
   sessions,
   projects,
   gatewayUrl,
+  myColor,
 }: {
   sessions: AgentSession[];
   projects: Project[];
   gatewayUrl?: string;
+  /**
+   * Every session on this page belongs to the current viewer today -- there
+   * is no sharing primitive yet (docs/WORLDVIEW.md §13 is still an open
+   * question), so one color covers the whole page. Once collaborators can
+   * appear here, this becomes a map keyed by ownerId instead.
+   */
+  myColor: { light: string; dark: string };
 }) {
   const [presence, setPresence] = useState<Map<string, PresenceEntry>>(new Map());
   const stopped = useRef(false);
@@ -59,10 +71,6 @@ export function SessionList({
 
     async function connect() {
       if (stopped.current) return;
-
-      // A previous connection's proactive-refresh timer would otherwise
-      // outlive it and later close whatever socket happens to be current --
-      // clear it before this attempt schedules its own.
       clearTimeout(proactiveTimer);
 
       let token: string;
@@ -108,62 +116,118 @@ export function SessionList({
     };
   }, [gatewayUrl]);
 
-  const projectName = (projectId?: string) => projects.find((p) => p.id === projectId)?.name;
-
   if (sessions.length === 0) {
     return (
-      <EmptyState
-        title="No sessions registered yet"
-        description="Register one above to see it here."
-      />
+      <SectionCard title="The board is empty">
+        <EmptyState
+          title="No sessions registered yet"
+          description="Connect a real agent or register one by hand below to see it here."
+        />
+      </SectionCard>
     );
   }
 
-  return (
-    <ul className="flex flex-col divide-y divide-border">
-      {sessions.map((agentSession) => {
-        const live = presence.get(agentSession.sessionRef);
+  const groups = groupByProject(sessions, projects);
 
-        return (
-          <li
-            key={agentSession.id}
-            className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-          >
-            <div className="min-w-0">
-              <p className="font-medium">
-                {agentSession.label || agentProviderLabel(agentSession.provider)}
-              </p>
-              <p className="mt-0.5 text-sm text-muted">
-                {agentProviderLabel(agentSession.provider)}
-                {" · "}
-                {projectName(agentSession.projectId) ?? "No project"}
-                {" · "}
-                Registered {relativeTime(agentSession.createdAt)}
-                {live?.activity ? ` · ${live.activity}` : ""}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={
-                  live?.state === "online"
-                    ? "pill pill--healthy"
-                    : live?.state === "offline"
-                      ? "pill pill--unknown"
-                      : "pill pill--neutral"
-                }
-              >
-                {live?.state === "online" ? "Online" : live?.state === "offline" ? "Offline" : "Registered"}
-              </span>
-              <form action={revokeAgentSessionAction}>
-                <input type="hidden" name="sessionId" value={agentSession.id} />
-                <button type="submit" className="btn btn--sm btn--ghost">
-                  Revoke
-                </button>
-              </form>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {groups.map((group) => (
+        <SectionCard key={group.projectId ?? "unassigned"} title={group.projectName}>
+          <div className="flex flex-wrap gap-x-5 gap-y-4">
+            {group.sessions.map((session) => (
+              <AvatarToken
+                key={session.id}
+                session={session}
+                live={presence.get(session.sessionRef)}
+                color={myColor}
+              />
+            ))}
+          </div>
+        </SectionCard>
+      ))}
+    </div>
+  );
+}
+
+function groupByProject(
+  sessions: AgentSession[],
+  projects: Project[],
+): { projectId?: string; projectName: string; sessions: AgentSession[] }[] {
+  const byId = new Map<string, AgentSession[]>();
+  const unassigned: AgentSession[] = [];
+
+  for (const session of sessions) {
+    if (!session.projectId) {
+      unassigned.push(session);
+      continue;
+    }
+    const bucket = byId.get(session.projectId) ?? [];
+    bucket.push(session);
+    byId.set(session.projectId, bucket);
+  }
+
+  const groups: { projectId?: string; projectName: string; sessions: AgentSession[] }[] = [
+    ...byId.entries(),
+  ].map(([projectId, group]) => ({
+    projectId,
+    projectName: projects.find((p) => p.id === projectId)?.name ?? "Unknown project",
+    sessions: group,
+  }));
+
+  if (unassigned.length > 0) {
+    groups.push({ projectId: undefined, projectName: "No project", sessions: unassigned });
+  }
+
+  return groups;
+}
+
+function AvatarToken({
+  session,
+  live,
+  color,
+}: {
+  session: AgentSession;
+  live?: PresenceEntry;
+  color: { light: string; dark: string };
+}) {
+  const online = live?.state === "online";
+  const docked = live?.state === "offline";
+  const displayName = session.label || agentProviderLabel(session.provider);
+  const initial = displayName.slice(0, 1).toUpperCase();
+
+  let statusText: string;
+  let caption: string;
+  if (online) {
+    statusText = live?.activity ?? "Online";
+    caption = "Online";
+  } else if (docked) {
+    statusText = "Docked -- offline";
+    caption = "Docked";
+  } else {
+    statusText = "Registered -- never connected";
+    caption = relativeTime(session.createdAt);
+  }
+
+  return (
+    <div className="flex w-20 flex-col items-center gap-1.5 text-center">
+      <div
+        className={`worldview-avatar person-color-bg ${online ? "worldview-avatar--online" : "worldview-avatar--offline"}`}
+        style={personColorStyle(color)}
+        title={`${displayName} · ${statusText}`}
+      >
+        {initial}
+        <span className="worldview-avatar-badge" aria-hidden="true">
+          <ProviderIcon provider={session.provider} size={13} />
+        </span>
+      </div>
+      <p className="w-full truncate text-[0.78rem] font-medium">{displayName}</p>
+      <p className="w-full truncate text-[0.7rem] text-muted">{caption}</p>
+      <form action={revokeAgentSessionAction}>
+        <input type="hidden" name="sessionId" value={session.id} />
+        <button type="submit" className="text-[0.7rem] text-faint hover:text-error hover:underline">
+          Revoke
+        </button>
+      </form>
+    </div>
   );
 }

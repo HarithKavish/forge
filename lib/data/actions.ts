@@ -22,6 +22,8 @@ import {
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
 import { createProject, getProjectRow } from "@/lib/core/projects";
+import { setMemberColor } from "@/lib/core/workspace-members";
+import { PERSON_COLOR_PALETTE } from "@/lib/color";
 import { mintPairingToken } from "@/lib/gateway/pairing";
 import {
   assignResource,
@@ -296,4 +298,27 @@ export async function disconnectAccountAction(formData: FormData): Promise<void>
 
   revalidateInventory();
   redirect(provider ? `/integrations/${provider}?disconnected=1` : "/integrations");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — person color (docs/WORLDVIEW.md §9)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Restricted to the validated palette (lib/color.ts) rather than a free hex
+ * input -- every entry has already been run through the CVD/contrast
+ * validator as this exact ordered set; an arbitrary color would bypass that
+ * guarantee for everyone who has to tell people apart on /worldview.
+ */
+export async function setMemberColorAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const color = String(formData.get("color") ?? "");
+
+  const isValid = color === "" || PERSON_COLOR_PALETTE.some((entry) => entry.light === color);
+  if (!isValid) redirect("/settings/workspace");
+
+  await setMemberColor(session.workspaceId, session.userId, color || null);
+  revalidatePath("/settings/workspace");
+  revalidatePath("/worldview");
+  redirect("/settings/workspace");
 }

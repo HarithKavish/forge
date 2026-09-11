@@ -3,13 +3,16 @@ import Link from "next/link";
 
 import { requireSession } from "@/lib/auth/session";
 import {
+  getMemberColor,
   getOverview,
   listConnectedAccounts,
   listProjects,
 } from "@/lib/data/queries";
 import { pluralize } from "@/lib/format";
+import { personColor, personColorStyle } from "@/lib/color";
 import { DetailRow, SectionCard } from "@/components/ui/page";
 import { ProviderMark } from "@/components/ui/provider-mark";
+import { ColorPicker } from "@/components/settings/color-picker";
 
 export const metadata: Metadata = {
   title: "Workspace settings",
@@ -25,11 +28,14 @@ export const metadata: Metadata = {
 export default async function WorkspaceSettingsPage() {
   const session = await requireSession();
 
-  const [overview, projects, accounts] = await Promise.all([
+  const [overview, projects, accounts, storedColor] = await Promise.all([
     getOverview(session.workspaceId),
     listProjects(session.workspaceId),
     listConnectedAccounts(session.workspaceId),
+    getMemberColor(session.workspaceId, session.userId),
   ]);
+
+  const color = personColor(session.userId, storedColor);
 
   return (
     <div className="flex flex-col gap-4">
@@ -50,7 +56,8 @@ export default async function WorkspaceSettingsPage() {
       >
         <div className="surface-inset flex items-center gap-3 px-3.5 py-3">
           <span
-            className="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-border bg-surface-strong text-[0.78rem] font-[650] text-muted"
+            className="person-color-bg flex h-9 w-9 flex-none items-center justify-center rounded-full text-[0.78rem] font-[650] text-white"
+            style={personColorStyle(color)}
             aria-hidden="true"
           >
             {session.name.slice(0, 1).toUpperCase()}
@@ -68,6 +75,18 @@ export default async function WorkspaceSettingsPage() {
           a separate table — so inviting people later is a matter of adding
           member rows and a role check, not reshaping the data.
         </p>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="label mb-2">Worldview color</p>
+          <ColorPicker current={storedColor} />
+          <p className="mt-2 text-[0.8rem] text-muted">
+            Tells your agents apart from everyone else&rsquo;s on{" "}
+            <Link href="/worldview" className="underline hover:no-underline">
+              Worldview
+            </Link>
+            . &ldquo;Auto&rdquo; picks a stable color from your account id.
+          </p>
+        </div>
       </SectionCard>
 
       <SectionCard

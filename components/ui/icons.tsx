@@ -229,3 +229,52 @@ export function CostIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * Agent-provider glyphs (Worldview, docs/WORLDVIEW.md §9). Deliberately
+ * abstract rather than a reproduction of any provider's actual logo/mark --
+ * these only need to be distinguishable from each other at a glance, not
+ * brand-accurate, and a lookalike trademark would be worse than a plain
+ * shape that's honestly Forge's own.
+ */
+export function AgentClaudeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        d="M12 2.5 14.1 9.9 21.5 12 14.1 14.1 12 21.5 9.9 14.1 2.5 12 9.9 9.9 12 2.5Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </Svg>
+  );
+}
+
+export function AgentCodexIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m9 8-5 4 5 4" />
+      <path d="m15 8 5 4-5 4" />
+    </Svg>
+  );
+}
+
+/** Two overlapping circles -- a "twins" motif, not another sparkle. At badge
+ * size (~13px) a second star-like glyph reads identically to Claude's;
+ * confirmed by rendering both at that size before settling on this shape. */
+export function AgentGeminiIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9.5" cy="12" r="6" />
+      <circle cx="14.5" cy="12" r="6" />
+    </Svg>
+  );
+}
+
+export function AgentOtherIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}

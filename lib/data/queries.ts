@@ -13,6 +13,7 @@ import {
   listAgentSessionRows,
   type AgentSessionRow,
 } from "@/lib/core/agent-sessions";
+import { getMemberColor as coreGetMemberColor } from "@/lib/core/workspace-members";
 import {
   getConnectedAccount as coreGetAccount,
   listAccountsForProvider as coreAccountsForProvider,
@@ -292,6 +293,11 @@ export async function listAllEnvironments(workspaceId: string): Promise<Environm
 
 export async function listAgentSessions(workspaceId: string): Promise<AgentSession[]> {
   return (await listAgentSessionRows(workspaceId)).map(toAgentSession);
+}
+
+/** The stored palette pick, or null -- lib/color.ts resolves the deterministic fallback. */
+export async function getMemberColor(workspaceId: string, userId: string): Promise<string | null> {
+  return coreGetMemberColor(workspaceId, userId);
 }
 
 /* -------------------------------------------------------------------------- */
