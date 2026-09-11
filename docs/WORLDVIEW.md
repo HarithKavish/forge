@@ -282,9 +282,10 @@ Each step should render something real in Worldview, the same discipline
 ARCHITECTURE.md §10 applies to the inventory.
 
 1. **Schema** — `agent_sessions` + `workspace_members.color`, plus a manual
-   "register a session" form (no gateway yet). Proves the Worldview UI
-   against real rows the same way the current dashboard proves itself
-   against `lib/mock/` data.
+   "register a session" form (no gateway yet). This is Worldview's own first
+   proof point, not a repeat of one that already exists elsewhere — it
+   proves the UI renders against real rows before any live presence exists
+   to drive it.
 2. **Gateway skeleton** on the VM — ingest endpoint, in-memory presence,
    snapshot REST. Worldview polls the snapshot; no WebSocket yet.
 3. **Claude Code source adapter** — real hook wiring end to end, one
