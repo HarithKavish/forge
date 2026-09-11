@@ -79,6 +79,7 @@ lib/
 docs/ARCHITECTURE.md  design decisions and build order
 docs/AUTH.md          Google OAuth setup and the identity model
 docs/DEPLOYMENT.md    how this goes live
+docs/WORLDVIEW.md     proposed: live agent-session map (design only, not built)
 ```
 
 ## Current phase
