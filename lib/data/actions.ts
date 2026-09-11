@@ -21,7 +21,7 @@ import {
   deleteConnectedAccount,
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
-import { createProject } from "@/lib/core/projects";
+import { createProject, getProjectRow } from "@/lib/core/projects";
 import {
   assignResource,
   assignResourcesToProject,
@@ -177,6 +177,12 @@ export async function registerAgentSessionAction(
   }
   if (label.length > 60) {
     return { error: "Labels are limited to 60 characters." };
+  }
+  // The <select> only ever offers this workspace's own projects, but the
+  // action can't assume that held -- confirm the id is actually one of ours
+  // before it goes anywhere near the insert.
+  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
+    return { error: "That project could not be found in this workspace." };
   }
 
   await createAgentSession(session.workspaceId, session.userId, {
