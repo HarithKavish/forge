@@ -4,8 +4,10 @@ import { requireSession } from "@/lib/auth/session";
 import { listAgentSessions, listProjectRecords } from "@/lib/data/queries";
 import { revokeAgentSessionAction } from "@/lib/data/actions";
 import { agentProviderLabel, relativeTime } from "@/lib/format";
+import { env } from "@/lib/env";
 import { EmptyState, PageHeader, SectionCard } from "@/components/ui/page";
 import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
+import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
 
 export const metadata: Metadata = {
   title: "Worldview",
@@ -14,11 +16,16 @@ export const metadata: Metadata = {
 /**
  * Worldview — the agent-session presence map (docs/WORLDVIEW.md).
  *
- * This is step 1 of the build order in docs/WORLDVIEW.md §12: a manual
- * registration form and a list of what's registered, with no gateway and no
- * live presence yet. Every session here shows as "Registered" because that is
- * genuinely all Forge knows about it today — online/offline arrives with the
- * gateway in a later step, and is never stored here even then.
+ * Two ways to get a session onto this page:
+ *  - "Connect a real agent" mints a pairing token (build-order step 3) that a
+ *    real hook exchanges, through forge-gateway, for an actual registration.
+ *  - "Register a session by hand" (step 1) still exists for testing without
+ *    wiring up a hook at all.
+ *
+ * Neither shows presence yet — that's the WebSocket fan-out in step 4. Every
+ * session here shows as "Registered" because that is genuinely all Forge
+ * knows about it today, and online/offline is never stored here even once
+ * it arrives (docs/WORLDVIEW.md §4).
  */
 export default async function WorldviewPage() {
   const session = await requireSession();
@@ -31,16 +38,27 @@ export default async function WorldviewPage() {
     projects.find((p) => p.id === projectId)?.name;
 
   const active = sessions.filter((s) => s.status === "active");
+  const gatewayUrl = env().GATEWAY_URL;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Workspace"
         title="Worldview"
-        description="Which coding-agent sessions are registered, and to what. No presence yet — that arrives with the gateway in docs/WORLDVIEW.md §5."
+        description="Which coding-agent sessions are registered, and to what. No presence yet — that arrives with the gateway's WebSocket fan-out, docs/WORLDVIEW.md §5."
       />
 
-      <SectionCard title="Register a session">
+      <SectionCard
+        title="Connect a real agent"
+        description="Mints a short-lived token a hook exchanges for a real registration through forge-gateway."
+      >
+        <PairSessionForm projects={projects} gatewayUrl={gatewayUrl} />
+      </SectionCard>
+
+      <SectionCard
+        title="Register a session by hand"
+        description="For testing, without wiring up a hook."
+      >
         <RegisterSessionForm projects={projects} />
       </SectionCard>
 

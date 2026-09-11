@@ -22,6 +22,7 @@ import {
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
 import { createProject, getProjectRow } from "@/lib/core/projects";
+import { mintPairingToken } from "@/lib/gateway/pairing";
 import {
   assignResource,
   assignResourcesToProject,
@@ -203,6 +204,58 @@ export async function revokeAgentSessionAction(formData: FormData): Promise<void
   await revokeAgentSession(session.workspaceId, sessionId);
   revalidatePath("/worldview");
   redirect("/worldview");
+}
+
+export interface PairingFormState {
+  error?: string;
+  token?: string;
+}
+
+/**
+ * Mints a pairing token for a real agent to connect through forge-gateway
+ * (docs/WORLDVIEW.md §5.1, §7). Unlike registerAgentSessionAction, this does
+ * NOT create an agent_sessions row -- the row only appears once an agent
+ * actually uses the token, via POST /api/gateway/sessions. The token is
+ * shown once in the response state; it is never logged or persisted here.
+ */
+export async function mintPairingTokenAction(
+  _prev: PairingFormState,
+  formData: FormData,
+): Promise<PairingFormState> {
+  const session = await requireSession();
+  const provider = String(formData.get("provider") ?? "");
+  const projectId = String(formData.get("projectId") ?? "") || null;
+  const label = String(formData.get("label") ?? "").trim();
+
+  if (!AGENT_PROVIDERS.includes(provider as (typeof AGENT_PROVIDERS)[number])) {
+    return { error: "Choose which agent provider this session is." };
+  }
+  if (label.length > 60) {
+    return { error: "Labels are limited to 60 characters." };
+  }
+  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
+    return { error: "That project could not be found in this workspace." };
+  }
+
+  let token: string;
+  try {
+    token = mintPairingToken({
+      workspaceId: session.workspaceId,
+      ownerId: session.userId,
+      provider: provider as (typeof AGENT_PROVIDERS)[number],
+      projectId,
+      label: label || null,
+    });
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not mint a pairing token.",
+    };
+  }
+
+  return { token };
 }
 
 /* -------------------------------------------------------------------------- */

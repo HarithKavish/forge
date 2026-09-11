@@ -32,6 +32,16 @@ const serverEnvSchema = z.object({
   /** Shared secret for the cron-triggered sync drain endpoint. */
   CRON_SECRET: z.string().min(16).optional(),
 
+  /**
+   * Shared with forge-gateway. Signs/verifies Worldview pairing tokens
+   * (lib/gateway/pairing.ts) and authenticates the gateway's callback to
+   * POST /api/gateway/sessions. See docs/WORLDVIEW.md §5, §7.
+   */
+  GATEWAY_SHARED_SECRET: z.string().min(16).optional(),
+
+  /** forge-gateway's own URL. Not secret -- only used to render setup instructions. */
+  GATEWAY_URL: z.string().url().optional(),
+
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
 });
 
