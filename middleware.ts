@@ -63,11 +63,13 @@ export default auth((request) => {
 
 export const config = {
   /**
-   * Everything except Next internals, static assets, and /api/auth — the OAuth
+   * Everything except Next internals, static assets, /api/auth (the OAuth
    * callback must reach its handler rather than being redirected to /login,
-   * which would make sign-in impossible.
+   * which would make sign-in impossible), and /api/gateway (server-to-server
+   * from forge-gateway, authenticated by its own shared secret rather than a
+   * Forge session — see app/api/gateway/sessions/route.ts).
    */
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api/auth|api/gateway|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

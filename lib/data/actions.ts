@@ -14,10 +14,17 @@ import { redirect } from "next/navigation";
 
 import { requireSession } from "@/lib/auth/session";
 import {
+  createAgentSession,
+  revokeAgentSession,
+} from "@/lib/core/agent-sessions";
+import {
   deleteConnectedAccount,
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
-import { createProject } from "@/lib/core/projects";
+import { createProject, getProjectRow } from "@/lib/core/projects";
+import { setMemberColor } from "@/lib/core/workspace-members";
+import { PERSON_COLOR_PALETTE } from "@/lib/color";
+import { mintPairingToken } from "@/lib/gateway/pairing";
 import {
   assignResource,
   assignResourcesToProject,
@@ -29,6 +36,12 @@ import { runDiscovery } from "@/lib/sync/discover";
 export interface ProjectFormState {
   error?: string;
 }
+
+export interface AgentSessionFormState {
+  error?: string;
+}
+
+const AGENT_PROVIDERS = ["claude", "codex", "gemini", "other"] as const;
 
 /** Refresh every view that shows inventory counts. */
 function revalidateInventory(): void {
@@ -145,6 +158,109 @@ export async function createProjectAction(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Worldview — agent sessions (docs/WORLDVIEW.md)                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Manual registration — the gateway from docs/WORLDVIEW.md §5 doesn't exist
+ * yet, so this is the only way a session gets a row today. It proves the same
+ * registration path the gateway will eventually drive automatically.
+ */
+export async function registerAgentSessionAction(
+  _prev: AgentSessionFormState,
+  formData: FormData,
+): Promise<AgentSessionFormState> {
+  const session = await requireSession();
+  const provider = String(formData.get("provider") ?? "");
+  const projectId = String(formData.get("projectId") ?? "") || null;
+  const label = String(formData.get("label") ?? "").trim();
+
+  if (!AGENT_PROVIDERS.includes(provider as (typeof AGENT_PROVIDERS)[number])) {
+    return { error: "Choose which agent provider this session is." };
+  }
+  if (label.length > 60) {
+    return { error: "Labels are limited to 60 characters." };
+  }
+  // The <select> only ever offers this workspace's own projects, but the
+  // action can't assume that held -- confirm the id is actually one of ours
+  // before it goes anywhere near the insert.
+  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
+    return { error: "That project could not be found in this workspace." };
+  }
+
+  await createAgentSession(session.workspaceId, session.userId, {
+    provider: provider as (typeof AGENT_PROVIDERS)[number],
+    projectId,
+    label,
+  });
+
+  revalidatePath("/worldview");
+  redirect("/worldview");
+}
+
+export async function revokeAgentSessionAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const sessionId = String(formData.get("sessionId") ?? "");
+  if (!sessionId) redirect("/worldview");
+
+  await revokeAgentSession(session.workspaceId, sessionId);
+  revalidatePath("/worldview");
+  redirect("/worldview");
+}
+
+export interface PairingFormState {
+  error?: string;
+  token?: string;
+}
+
+/**
+ * Mints a pairing token for a real agent to connect through forge-gateway
+ * (docs/WORLDVIEW.md §5.1, §7). Unlike registerAgentSessionAction, this does
+ * NOT create an agent_sessions row -- the row only appears once an agent
+ * actually uses the token, via POST /api/gateway/sessions. The token is
+ * shown once in the response state; it is never logged or persisted here.
+ */
+export async function mintPairingTokenAction(
+  _prev: PairingFormState,
+  formData: FormData,
+): Promise<PairingFormState> {
+  const session = await requireSession();
+  const provider = String(formData.get("provider") ?? "");
+  const projectId = String(formData.get("projectId") ?? "") || null;
+  const label = String(formData.get("label") ?? "").trim();
+
+  if (!AGENT_PROVIDERS.includes(provider as (typeof AGENT_PROVIDERS)[number])) {
+    return { error: "Choose which agent provider this session is." };
+  }
+  if (label.length > 60) {
+    return { error: "Labels are limited to 60 characters." };
+  }
+  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
+    return { error: "That project could not be found in this workspace." };
+  }
+
+  let token: string;
+  try {
+    token = mintPairingToken({
+      workspaceId: session.workspaceId,
+      ownerId: session.userId,
+      provider: provider as (typeof AGENT_PROVIDERS)[number],
+      projectId,
+      label: label || null,
+    });
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not mint a pairing token.",
+    };
+  }
+
+  return { token };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Integrations                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -182,4 +298,27 @@ export async function disconnectAccountAction(formData: FormData): Promise<void>
 
   revalidateInventory();
   redirect(provider ? `/integrations/${provider}?disconnected=1` : "/integrations");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — person color (docs/WORLDVIEW.md §9)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Restricted to the validated palette (lib/color.ts) rather than a free hex
+ * input -- every entry has already been run through the CVD/contrast
+ * validator as this exact ordered set; an arbitrary color would bypass that
+ * guarantee for everyone who has to tell people apart on /worldview.
+ */
+export async function setMemberColorAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const color = String(formData.get("color") ?? "");
+
+  const isValid = color === "" || PERSON_COLOR_PALETTE.some((entry) => entry.light === color);
+  if (!isValid) redirect("/settings/workspace");
+
+  await setMemberColor(session.workspaceId, session.userId, color || null);
+  revalidatePath("/settings/workspace");
+  revalidatePath("/worldview");
+  redirect("/settings/workspace");
 }

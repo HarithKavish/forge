@@ -8,6 +8,20 @@
       "when": 1786367503830,
       "tag": "0000_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788006503000,
+      "tag": "0001_drop_user_password_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789133284907,
+      "tag": "0002_add_agent_sessions",
+      "breakpoints": true
     }
   ]
 }
