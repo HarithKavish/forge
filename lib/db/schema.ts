@@ -379,6 +379,42 @@ export const agentSessions = pgTable("agent_sessions", {
   index("agent_sessions_project_idx").on(t.projectId),
 ]);
 
+/**
+ * Grants one user access to one project's Worldview data, across a workspace
+ * boundary they are not otherwise a member of — the sharing primitive
+ * decided in docs/WORLDVIEW.md §13a.
+ *
+ * Deliberately a project-level grant, not a workspace role: a collaborator
+ * gains nothing about the workspace's resources, billing, or other
+ * projects, only this one project's registered sessions and presence. A
+ * grant carries one right today (view presence and register their own
+ * sessions on this project) — there is no role/tier column because there is
+ * only one tier; add one if a second is ever needed rather than guessing at
+ * its shape now.
+ */
+export const projectCollaborators = pgTable("project_collaborators", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  invitedBy: uuid("invited_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}, (t) => [
+  uniqueIndex("project_collaborators_project_user_key").on(t.projectId, t.userId),
+  index("project_collaborators_user_idx").on(t.userId),
+  index("project_collaborators_workspace_idx").on(t.workspaceId),
+]);
+
 /* -------------------------------------------------------------------------- */
 /* Integrations                                                                */
 /* -------------------------------------------------------------------------- */

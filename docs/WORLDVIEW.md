@@ -1,15 +1,17 @@
 # Worldview — Design Proposal
 
-Status: **build-order steps 1, 3 and 4 implemented, tested, reviewed, and
-merged to `development`** (step 2's responsibilities are folded into step
-3's PR — see §12). The revocation gap §8 originally flagged has since been
-closed (bounded to a 5-minute lag, not eliminated). Step 5 (sharing) is a
-decided design, not yet built — see §13a. Step 6 (Codex/Gemini adapters) is on hold; step 7 items are
-partially done (visual polish shipped, the §6 live-detail relay does not
-work as originally scoped — see the note there). Several sections below
-were corrected against what building steps 1-4 actually required, rather
-than left as the pre-implementation guess — each correction says what
-changed and why, so this stays a design record, not just a plan.
+Status: **build-order steps 1, 3, 4 and 5 implemented and tested**
+(step 2's responsibilities are folded into step 3's work — see §12; steps
+1-4 are merged to `development`, step 5 is pending review). The revocation
+gap §8 originally flagged has since been closed (bounded to a 5-minute
+lag, not eliminated). Step 5 (sharing, §13a) is built: a per-project ACL,
+add-by-email, self-revoke only. Step 6 (Codex/Gemini adapters) is on hold;
+step 7 items are partially done (visual polish shipped, the §6 live-detail
+relay does not work as originally scoped — see the note there). Several
+sections below were corrected against what building each step actually
+required, rather than left as the pre-implementation guess — each
+correction says what changed and why, so this stays a design record, not
+just a plan.
 
 Scope of this document: Worldview, a page that visualizes coding-agent
 sessions (Claude Code, Codex, …) live, grouped by project and by the person
@@ -399,10 +401,11 @@ ARCHITECTURE.md §10 applies to the inventory.
    a real-time update in the same test run. Same PRs; one real bug (a
    reconnect timer that could force-close a newer, unrelated socket) caught
    by review and fixed before merge.
-5. **Sharing primitive** (see §13a) — **decided, not built.** Per-project
-   ACL; a collaborator can register their own agents on a shared project,
-   not just view it. The invite flow itself and cross-collaborator revoke
-   rights are explicitly left for when this is actually built.
+5. **Sharing primitive** (see §13a) — **done.** Per-project ACL, add-by-
+   email invite (an existing Forge account required), a collaborator can
+   register their own agents on a shared project (not just view it) and
+   revoke their own sessions there. Cross-collaborator revoke is
+   deliberately not granted — a separate decision, not assumed.
 6. **Additional provider adapters** (Codex, Gemini, …) — **on hold.** Codex's
    hook system doesn't support an HTTP handler (§11.3), so it isn't the same
    shape of work step 3 was; needs its own design pass, not a copy-paste.
@@ -414,37 +417,53 @@ ARCHITECTURE.md §10 applies to the inventory.
    matter of finishing it, but of deciding whether it's worth a genuine
    local companion process at all.
 
-## 13a. Sharing primitive — decided, not yet built
+## 13a. Sharing primitive — built
 
-**Shape: a per-project ACL**, not a new workspace role and not a
-viewer-link. A new table grants a specific user read (and, per the next
-paragraph, write) access to a specific project's Worldview data — not the
-whole workspace, and not its resources, billing, or credentials. Chosen
-over reusing `workspace_members` with a limited role because that would
-make a collaborator a workspace member first and scope them down second;
-a per-project grant matches "share *this* project" directly, at the cost
-of being a new concept alongside `workspace_members` rather than a reuse
-of it.
+**Shape: a per-project ACL** (`project_collaborators`), not a new
+workspace role and not a viewer-link. The table grants a specific user
+access to a specific project's Worldview data — not the whole workspace,
+and not its resources, billing, or credentials; `getProject`/`getProjectRow`
+stay workspace-scoped exactly as before, so a collaborator's only route
+into a shared project is Worldview itself, never `/projects/[id]` or its
+resources/costs/services/activity tabs. Chosen over reusing
+`workspace_members` with a limited role because that would make a
+collaborator a workspace member first and scope them down second; a
+per-project grant matches "share *this* project" directly, at the cost of
+being a new concept alongside `workspace_members` rather than a reuse of
+it.
 
 **Rights: view presence *and* register their own agents on the shared
-project.** A collaborator isn't read-only — they can mint their own
-pairing tokens and connect their own sessions to a project they've been
-granted access to, so two people's agents genuinely appear together on
-the same board, matching the scenario that motivated Worldview in the
-first place (docs/WORLDVIEW.md's own opening brief: one person's Claude
-sessions and a collaborator's Codex sessions, same project). This is more
-than the minimum a "presence map" needs and a real scope increase over
-"view-only": granting access to a project now also means granting the
-ability to register sessions against it, so whatever mints pairing tokens
-(`mintPairingTokenAction` today) needs to check this ACL, not just "is
-this the workspace owner," once building starts.
+project.** A collaborator mints their own pairing tokens and connects
+their own sessions to a project they've been granted access to
+(`resolveProjectAccess` — owns the workspace, or holds a grant — gates
+both `mintPairingTokenAction` and `registerAgentSessionAction`), so two
+people's agents genuinely appear together on the same board, matching the
+scenario that motivated Worldview in the first place. The minted
+token's/registered row's `workspaceId` is the project's *real* workspace,
+resolved from the project rather than assumed to be the caller's own —
+which is also why `/worldview` now resolves a color per session by its
+actual `(workspaceId, ownerId)` rather than one color for the whole page,
+and why `listAgentSessionsForProjects` fetches by project id instead of
+workspace id for the sessions a collaborator's shared projects contribute.
 
-**Still to work out when this gets built, not decided yet:** the actual
-invite flow (who can grant access, how a collaborator without a Forge
-account yet gets one), and whether registering entitles a collaborator to
-revoke *other* people's sessions on the same project or only their own —
-`revokeAgentSession` today only checks `workspaceId`, and would need an
-ownership or per-project-role check added.
+**Invite flow: add-by-email, requiring an existing Forge account.**
+`addCollaboratorByEmail` looks the person up by the email they already
+sign into Forge with and errors with a message meant to be shown directly
+if no account exists — an account-less invite (something that provisions
+one, or a magic-link style flow) was explicitly left out rather than
+guessed at. Only the project's own workspace can grant or revoke a grant
+(`/projects/[projectId]/collaborators`, gated by the same
+`getProjectRow(session.workspaceId, projectId)` check every other
+workspace-scoped write in this codebase uses).
+
+**Revoke rights: self-revoke only, decided narrowly on purpose.** A
+collaborator can revoke their own session even though it lives in the
+project owner's workspace (`revokeAgentSession` now checks
+`ownerId = callerUserId` as an alternative to the usual workspace match,
+not instead of it). One collaborator revoking *another* collaborator's
+session on the same shared project is not granted — that still needs its
+own decision (would it be a project-level right, or stay owner-only?) and
+wasn't assumed just because self-revoke was decided.
 
 ## 13. Open questions
 

@@ -11,7 +11,7 @@ import { useActionState, useState } from "react";
 
 import { mintPairingTokenAction, type PairingFormState } from "@/lib/data/actions";
 import { agentProviderLabel } from "@/lib/format";
-import type { AgentProvider, Project } from "@/lib/data/types";
+import type { AgentProvider, SelectableProject } from "@/lib/data/types";
 
 const INITIAL: PairingFormState = {};
 
@@ -21,7 +21,7 @@ export function PairSessionForm({
   projects,
   gatewayUrl,
 }: {
-  projects: Project[];
+  projects: SelectableProject[];
   gatewayUrl?: string;
 }) {
   const [state, formAction, pending] = useActionState(mintPairingTokenAction, INITIAL);
@@ -137,6 +137,7 @@ ${["SessionStart", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"]
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
+              {project.shared ? " (shared)" : ""}
             </option>
           ))}
         </select>

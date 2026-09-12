@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { revokeAgentSessionAction } from "@/lib/data/actions";
 import { agentProviderLabel, relativeTime } from "@/lib/format";
 import { personColorStyle } from "@/lib/color";
-import type { AgentSession, Project } from "@/lib/data/types";
+import type { DisplaySession, SelectableProject } from "@/lib/data/types";
 import { EmptyState, SectionCard } from "@/components/ui/page";
 import { ProviderIcon } from "@/components/agent-sessions/provider-icon";
 
@@ -45,18 +45,10 @@ export function SessionList({
   sessions,
   projects,
   gatewayUrl,
-  myColor,
 }: {
-  sessions: AgentSession[];
-  projects: Project[];
+  sessions: DisplaySession[];
+  projects: SelectableProject[];
   gatewayUrl?: string;
-  /**
-   * Every session on this page belongs to the current viewer today -- there
-   * is no sharing primitive yet (docs/WORLDVIEW.md §13 is still an open
-   * question), so one color covers the whole page. Once collaborators can
-   * appear here, this becomes a map keyed by ownerId instead.
-   */
-  myColor: { light: string; dark: string };
 }) {
   const [presence, setPresence] = useState<Map<string, PresenceEntry>>(new Map());
   const stopped = useRef(false);
@@ -139,7 +131,6 @@ export function SessionList({
                 key={session.id}
                 session={session}
                 live={presence.get(session.sessionRef)}
-                color={myColor}
               />
             ))}
           </div>
@@ -150,11 +141,11 @@ export function SessionList({
 }
 
 function groupByProject(
-  sessions: AgentSession[],
-  projects: Project[],
-): { projectId?: string; projectName: string; sessions: AgentSession[] }[] {
-  const byId = new Map<string, AgentSession[]>();
-  const unassigned: AgentSession[] = [];
+  sessions: DisplaySession[],
+  projects: SelectableProject[],
+): { projectId?: string; projectName: string; sessions: DisplaySession[] }[] {
+  const byId = new Map<string, DisplaySession[]>();
+  const unassigned: DisplaySession[] = [];
 
   for (const session of sessions) {
     if (!session.projectId) {
@@ -166,7 +157,7 @@ function groupByProject(
     byId.set(session.projectId, bucket);
   }
 
-  const groups: { projectId?: string; projectName: string; sessions: AgentSession[] }[] = [
+  const groups: { projectId?: string; projectName: string; sessions: DisplaySession[] }[] = [
     ...byId.entries(),
   ].map(([projectId, group]) => ({
     projectId,
@@ -184,11 +175,9 @@ function groupByProject(
 function AvatarToken({
   session,
   live,
-  color,
 }: {
-  session: AgentSession;
+  session: DisplaySession;
   live?: PresenceEntry;
-  color: { light: string; dark: string };
 }) {
   const online = live?.state === "online";
   const docked = live?.state === "offline";
@@ -212,7 +201,7 @@ function AvatarToken({
     <div className="flex w-20 flex-col items-center gap-1.5 text-center">
       <div
         className={`worldview-avatar person-color-bg ${online ? "worldview-avatar--online" : "worldview-avatar--offline"}`}
-        style={personColorStyle(color)}
+        style={personColorStyle(session.color)}
         title={`${displayName} · ${statusText}`}
       >
         {initial}
