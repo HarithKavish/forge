@@ -45,10 +45,23 @@ export function SessionList({
   sessions,
   projects,
   gatewayUrl,
+  viewerId,
+  viewerWorkspaceId,
 }: {
   sessions: DisplaySession[];
   projects: SelectableProject[];
   gatewayUrl?: string;
+  /**
+   * Who can revoke what (docs/WORLDVIEW.md §13a): a session's own owner, or
+   * whoever owns the workspace it's registered in. Sessions on this page no
+   * longer all belong to the viewer once shared projects are mixed in, so
+   * the Revoke control can't just always be shown -- offering it for a
+   * session neither check passes would silently no-op
+   * (revokeAgentSession's UPDATE matches zero rows) while the page still
+   * redirects as if it worked.
+   */
+  viewerId: string;
+  viewerWorkspaceId: string;
 }) {
   const [presence, setPresence] = useState<Map<string, PresenceEntry>>(new Map());
   const stopped = useRef(false);
@@ -131,6 +144,7 @@ export function SessionList({
                 key={session.id}
                 session={session}
                 live={presence.get(session.sessionRef)}
+                canRevoke={session.ownerId === viewerId || session.workspaceId === viewerWorkspaceId}
               />
             ))}
           </div>
@@ -175,9 +189,11 @@ function groupByProject(
 function AvatarToken({
   session,
   live,
+  canRevoke,
 }: {
   session: DisplaySession;
   live?: PresenceEntry;
+  canRevoke: boolean;
 }) {
   const online = live?.state === "online";
   const docked = live?.state === "offline";
@@ -211,12 +227,14 @@ function AvatarToken({
       </div>
       <p className="w-full truncate text-[0.78rem] font-medium">{displayName}</p>
       <p className="w-full truncate text-[0.7rem] text-muted">{caption}</p>
-      <form action={revokeAgentSessionAction}>
-        <input type="hidden" name="sessionId" value={session.id} />
-        <button type="submit" className="text-[0.7rem] text-faint hover:text-error hover:underline">
-          Revoke
-        </button>
-      </form>
+      {canRevoke ? (
+        <form action={revokeAgentSessionAction}>
+          <input type="hidden" name="sessionId" value={session.id} />
+          <button type="submit" className="text-[0.7rem] text-faint hover:text-error hover:underline">
+            Revoke
+          </button>
+        </form>
+      ) : null}
     </div>
   );
 }

@@ -105,7 +105,13 @@ export default async function WorldviewPage() {
         description="Which coding-agent sessions are registered, and whether they're online right now."
       />
 
-      <SessionList sessions={displaySessions} projects={selectableProjects} gatewayUrl={gatewayUrl} />
+      <SessionList
+        sessions={displaySessions}
+        projects={selectableProjects}
+        gatewayUrl={gatewayUrl}
+        viewerId={session.userId}
+        viewerWorkspaceId={session.workspaceId}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <SectionCard
