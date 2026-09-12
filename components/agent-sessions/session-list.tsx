@@ -92,7 +92,14 @@ export function SessionList({
       socket = new WebSocket(wsUrl(gatewayUrl!, token));
 
       socket.addEventListener("message", (event) => {
-        const message = JSON.parse(event.data);
+        let message;
+        try {
+          message = JSON.parse(event.data);
+        } catch {
+          // A malformed frame shouldn't take down the listener for every
+          // message after it -- drop this one and keep the connection.
+          return;
+        }
         if (message.type === "snapshot") {
           setPresence(new Map(message.sessions.map((s: PresenceEntry) => [s.sessionRef, s])));
         } else if (message.type === "update") {
