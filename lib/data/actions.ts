@@ -22,6 +22,11 @@ import {
   getConnectedAccount,
 } from "@/lib/core/connected-accounts";
 import { createProject, getProjectRow } from "@/lib/core/projects";
+import {
+  addCollaboratorByEmail,
+  removeCollaborator,
+  resolveProjectAccess,
+} from "@/lib/core/project-collaborators";
 import { setMemberColor } from "@/lib/core/workspace-members";
 import { PERSON_COLOR_PALETTE } from "@/lib/color";
 import { mintPairingToken } from "@/lib/gateway/pairing";
@@ -181,14 +186,22 @@ export async function registerAgentSessionAction(
   if (label.length > 60) {
     return { error: "Labels are limited to 60 characters." };
   }
-  // The <select> only ever offers this workspace's own projects, but the
-  // action can't assume that held -- confirm the id is actually one of ours
-  // before it goes anywhere near the insert.
-  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
-    return { error: "That project could not be found in this workspace." };
+
+  // The <select> only ever offers this workspace's own projects plus
+  // projects explicitly shared with the caller, but the action can't
+  // assume that held. resolveProjectAccess covers both: it owns the
+  // workspace, or holds a collaborator grant (docs/WORLDVIEW.md §13a) --
+  // either way, the session is registered in that project's *real*
+  // workspace, which is only ever the caller's own workspace when they're
+  // not a collaborator on someone else's project.
+  let workspaceId = session.workspaceId;
+  if (projectId) {
+    const access = await resolveProjectAccess(session.userId, projectId);
+    if (!access) return { error: "That project could not be found, or you don't have access to it." };
+    workspaceId = access.workspaceId;
   }
 
-  await createAgentSession(session.workspaceId, session.userId, {
+  await createAgentSession(workspaceId, session.userId, {
     provider: provider as (typeof AGENT_PROVIDERS)[number],
     projectId,
     label,
@@ -203,7 +216,7 @@ export async function revokeAgentSessionAction(formData: FormData): Promise<void
   const sessionId = String(formData.get("sessionId") ?? "");
   if (!sessionId) redirect("/worldview");
 
-  await revokeAgentSession(session.workspaceId, sessionId);
+  await revokeAgentSession(session.workspaceId, session.userId, sessionId);
   revalidatePath("/worldview");
   redirect("/worldview");
 }
@@ -235,14 +248,23 @@ export async function mintPairingTokenAction(
   if (label.length > 60) {
     return { error: "Labels are limited to 60 characters." };
   }
-  if (projectId && !(await getProjectRow(session.workspaceId, projectId))) {
-    return { error: "That project could not be found in this workspace." };
+
+  // See the identical check in registerAgentSessionAction -- a chosen
+  // project may belong to another workspace entirely if it was shared with
+  // this caller (docs/WORLDVIEW.md §13a). The minted token's workspaceId
+  // claim must be that project's real workspace, not the caller's own,
+  // or a collaborator's registered session would land in the wrong place.
+  let workspaceId = session.workspaceId;
+  if (projectId) {
+    const access = await resolveProjectAccess(session.userId, projectId);
+    if (!access) return { error: "That project could not be found, or you don't have access to it." };
+    workspaceId = access.workspaceId;
   }
 
   let token: string;
   try {
     token = mintPairingToken({
-      workspaceId: session.workspaceId,
+      workspaceId,
       ownerId: session.userId,
       provider: provider as (typeof AGENT_PROVIDERS)[number],
       projectId,
@@ -321,4 +343,55 @@ export async function setMemberColorAction(formData: FormData): Promise<void> {
   revalidatePath("/settings/workspace");
   revalidatePath("/worldview");
   redirect("/settings/workspace");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — sharing (docs/WORLDVIEW.md §13a)                               */
+/* -------------------------------------------------------------------------- */
+
+export interface CollaboratorFormState {
+  error?: string;
+}
+
+/**
+ * Grants access by email. Only the project's own workspace can grant it --
+ * `getProjectRow(session.workspaceId, projectId)` is both "does this
+ * project exist" and "is the caller allowed to manage its collaborators",
+ * in one check, the same pattern every other workspace-scoped write in
+ * this file uses.
+ */
+export async function addCollaboratorAction(
+  _prev: CollaboratorFormState,
+  formData: FormData,
+): Promise<CollaboratorFormState> {
+  const session = await requireSession();
+  const projectId = String(formData.get("projectId") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+
+  if (!email) return { error: "Enter the email of the person to add." };
+  if (!(await getProjectRow(session.workspaceId, projectId))) {
+    return { error: "That project could not be found in this workspace." };
+  }
+
+  try {
+    await addCollaboratorByEmail(session.workspaceId, projectId, session.userId, email);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not add that person." };
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  return {};
+}
+
+export async function removeCollaboratorAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const projectId = String(formData.get("projectId") ?? "");
+  const collaboratorId = String(formData.get("collaboratorId") ?? "");
+  if (!projectId || !collaboratorId) redirect("/projects");
+
+  if (!(await getProjectRow(session.workspaceId, projectId))) redirect("/projects");
+
+  await removeCollaborator(session.workspaceId, projectId, collaboratorId);
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}`);
 }

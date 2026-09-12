@@ -12,13 +12,13 @@ import { useActionState } from "react";
 
 import { registerAgentSessionAction, type AgentSessionFormState } from "@/lib/data/actions";
 import { agentProviderLabel } from "@/lib/format";
-import type { AgentProvider, Project } from "@/lib/data/types";
+import type { AgentProvider, SelectableProject } from "@/lib/data/types";
 
 const INITIAL: AgentSessionFormState = {};
 
 const PROVIDERS: AgentProvider[] = ["claude", "codex", "gemini", "other"];
 
-export function RegisterSessionForm({ projects }: { projects: Project[] }) {
+export function RegisterSessionForm({ projects }: { projects: SelectableProject[] }) {
   const [state, formAction, pending] = useActionState(registerAgentSessionAction, INITIAL);
 
   return (
@@ -45,6 +45,7 @@ export function RegisterSessionForm({ projects }: { projects: Project[] }) {
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
+              {project.shared ? " (shared)" : ""}
             </option>
           ))}
         </select>

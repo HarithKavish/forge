@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { agentSessions } from "@/lib/db/schema";
@@ -20,6 +20,26 @@ export async function listAgentSessionRows(workspaceId: string): Promise<AgentSe
     .select()
     .from(agentSessions)
     .where(eq(agentSessions.workspaceId, workspaceId))
+    .orderBy(desc(agentSessions.createdAt));
+}
+
+/**
+ * Sessions on a set of projects, not scoped by a single workspaceId --
+ * used for a collaborator's shared projects (docs/WORLDVIEW.md §13a), which
+ * live in a workspace the caller isn't a member of. Safe only because the
+ * caller resolves `projectIds` from `listSharedProjects`/
+ * `resolveProjectAccess` first, which already checked access; this
+ * function trusts whatever project ids it's given, the same way
+ * `listAgentSessionRows` trusts whatever workspaceId it's given.
+ */
+export async function listAgentSessionRowsForProjects(
+  projectIds: string[],
+): Promise<AgentSessionRow[]> {
+  if (projectIds.length === 0) return [];
+  return db
+    .select()
+    .from(agentSessions)
+    .where(inArray(agentSessions.projectId, projectIds))
     .orderBy(desc(agentSessions.createdAt));
 }
 
@@ -94,10 +114,60 @@ export async function registerGatewaySession(
   return row;
 }
 
-/** Flips a registration to revoked. The row stays — see docs/WORLDVIEW.md §8. */
-export async function revokeAgentSession(workspaceId: string, sessionId: string): Promise<void> {
+/**
+ * Flips a registration to revoked. The row stays — see docs/WORLDVIEW.md §8.
+ *
+ * Two ways to be allowed to: the workspace it lives in is yours (revoking
+ * anyone's session there), or you're the session's own `ownerId` (revoking
+ * your own, even one registered on a project you only collaborate on and
+ * that therefore lives in someone else's workspace — docs/WORLDVIEW.md
+ * §13a). Cross-collaborator revoke (one collaborator revoking another's
+ * session on a shared project) is explicitly not decided yet, so it isn't
+ * granted here either.
+ */
+export async function revokeAgentSession(
+  callerWorkspaceId: string,
+  callerUserId: string,
+  sessionId: string,
+): Promise<void> {
   await db
     .update(agentSessions)
     .set({ status: "revoked" })
-    .where(and(eq(agentSessions.workspaceId, workspaceId), eq(agentSessions.id, sessionId)));
+    .where(
+      and(
+        eq(agentSessions.id, sessionId),
+        or(eq(agentSessions.workspaceId, callerWorkspaceId), eq(agentSessions.ownerId, callerUserId)),
+      ),
+    );
+}
+
+/**
+ * What forge-gateway's periodic revocation check calls
+ * (app/api/gateway/sessions/status/route.ts) to close the gap docs/
+ * WORLDVIEW.md §8 describes: the gateway verifies a pairing token locally
+ * and never re-checks Forge per event, so "Revoke" alone doesn't stop it
+ * from accepting one. This is that re-check, run on an interval instead.
+ *
+ * A `sessionRef` with no row at all comes back "revoked" too -- not found
+ * is not a safe default to treat as active.
+ */
+export async function getSessionStatuses(
+  workspaceId: string,
+  sessionRefs: string[],
+): Promise<Record<string, "active" | "revoked">> {
+  if (sessionRefs.length === 0) return {};
+
+  const rows = await db
+    .select({ sessionRef: agentSessions.sessionRef, status: agentSessions.status })
+    .from(agentSessions)
+    .where(
+      and(eq(agentSessions.workspaceId, workspaceId), inArray(agentSessions.sessionRef, sessionRefs)),
+    );
+
+  const found = new Map(rows.map((row) => [row.sessionRef, row.status]));
+  const result: Record<string, "active" | "revoked"> = {};
+  for (const ref of sessionRefs) {
+    result[ref] = found.get(ref) === "active" ? "active" : "revoked";
+  }
+  return result;
 }

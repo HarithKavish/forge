@@ -11,8 +11,13 @@
 
 import {
   listAgentSessionRows,
+  listAgentSessionRowsForProjects,
   type AgentSessionRow,
 } from "@/lib/core/agent-sessions";
+import {
+  listCollaborators as coreListCollaborators,
+  listSharedProjects as coreListSharedProjects,
+} from "@/lib/core/project-collaborators";
 import { getMemberColor as coreGetMemberColor } from "@/lib/core/workspace-members";
 import {
   getConnectedAccount as coreGetAccount,
@@ -43,10 +48,12 @@ import type {
   ConnectedAccount,
   Environment,
   Project,
+  ProjectCollaborator,
   ProjectSummary,
   ProviderInfo,
   Resource,
   Service,
+  SharedProject,
   WorkspaceOverview,
 } from "./types";
 
@@ -293,6 +300,37 @@ export async function listAllEnvironments(workspaceId: string): Promise<Environm
 
 export async function listAgentSessions(workspaceId: string): Promise<AgentSession[]> {
   return (await listAgentSessionRows(workspaceId)).map(toAgentSession);
+}
+
+/**
+ * Sessions on projects shared with the caller (docs/WORLDVIEW.md §13a) --
+ * not scoped by a single workspaceId, since a shared project lives in a
+ * workspace the caller isn't a member of. Only ever call this with project
+ * ids that came from `listSharedProjects` for the same user; it does not
+ * re-check access itself.
+ */
+export async function listAgentSessionsForProjects(projectIds: string[]): Promise<AgentSession[]> {
+  return (await listAgentSessionRowsForProjects(projectIds)).map(toAgentSession);
+}
+
+/** Projects shared with this user, from workspaces they hold no membership in. */
+export async function listSharedProjects(userId: string): Promise<SharedProject[]> {
+  return coreListSharedProjects(userId);
+}
+
+/** Who can view/register on a project's Worldview data, for the owner's management UI. */
+export async function listProjectCollaborators(
+  workspaceId: string,
+  projectId: string,
+): Promise<ProjectCollaborator[]> {
+  const rows = await coreListCollaborators(workspaceId, projectId);
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.userId,
+    email: row.email,
+    name: row.name ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+  }));
 }
 
 /** The stored palette pick, or null -- lib/color.ts resolves the deterministic fallback. */
