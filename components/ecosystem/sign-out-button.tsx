@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowLeftIcon } from "@/components/ui/icons";
 import { store, USER_KEY } from "@/lib/ecosystem/store";
 
 /**
@@ -9,14 +10,16 @@ import { store, USER_KEY } from "@/lib/ecosystem/store";
  * cleared here, in the browser, or every other surface would keep showing the
  * picture of someone this machine no longer has a session for.
  */
-export function SignOutButton() {
+export function SignOutButton({ compact = false }: { compact?: boolean }) {
   return (
     <button
       type="submit"
-      className="btn btn--ghost w-full justify-start"
+      className={compact ? "btn btn--ghost btn--sm" : "btn btn--ghost w-full justify-start"}
       onClick={() => store().remove(USER_KEY)}
+      title={compact ? "Sign out" : undefined}
     >
-      Sign out
+      {compact ? <ArrowLeftIcon size={16} /> : null}
+      {compact ? <span className="sr-only">Sign out</span> : "Sign out"}
     </button>
   );
 }
