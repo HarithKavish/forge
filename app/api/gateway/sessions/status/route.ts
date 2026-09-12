@@ -37,6 +37,12 @@ export async function POST(request: NextRequest) {
   if (!body.workspaceId || !Array.isArray(body.sessionRefs)) {
     return NextResponse.json({ error: "workspaceId and sessionRefs are required" }, { status: 400 });
   }
+  // Trusted caller (the shared secret above), but a workspace's real session
+  // count is small -- a cap costs nothing and rules out an unbounded query
+  // if the gateway ever batches more aggressively than it does today.
+  if (body.sessionRefs.length > 500 || body.sessionRefs.some((ref) => typeof ref !== "string")) {
+    return NextResponse.json({ error: "sessionRefs must be at most 500 strings" }, { status: 400 });
+  }
 
   const statuses = await getSessionStatuses(body.workspaceId, body.sessionRefs);
   return NextResponse.json({ statuses });
