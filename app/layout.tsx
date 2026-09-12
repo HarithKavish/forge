@@ -35,6 +35,7 @@ try {
     : localStorage.getItem('forge-theme');
   var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.classList.toggle('dark-mode', dark);
 } catch (e) {
   document.documentElement.dataset.theme = 'light';
 }
@@ -52,11 +53,19 @@ export default function RootLayout({
             globals.css and no longer restates the shared ones. */}
         <link
           rel="stylesheet"
-          href="https://harithkavish.com/design-system/v1.0.0/tokens.css?v=20260829.3"
+          href="https://harithkavish.com/design-system/v1.0.0/tokens.css?v=20260911.2"
+        />
+        {/* The shared shell components — .site-sidebar, .theme-toggle, the
+            profile dropdown — so the sidebar and its theme toggle can be
+            styled against the same classes the vanilla sites use, per
+            design-system's docs/shell-contract.md. */}
+        <link
+          rel="stylesheet"
+          href="https://harithkavish.com/design-system/v1.0.0/components.css?v=20260911.2"
         />
         {/* The ecosystem's shared state. Must run before the theme script,
             which reads the chosen theme from it. */}
-        <script src="https://harithkavish.com/design-system/v1.0.0/harith-store.js?v=20260829.3" />
+        <script src="https://harithkavish.com/design-system/v1.0.0/harith-store.js?v=20260911.2" />
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>{children}</body>

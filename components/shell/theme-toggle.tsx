@@ -12,10 +12,19 @@
 
 import { useEffect, useState } from "react";
 
-import { MoonIcon, SunIcon } from "@/components/ui/icons";
 import { store, THEME_KEY } from "@/lib/ecosystem/store";
 
 const LEGACY_KEY = "forge-theme";
+
+/* Parity with window.HarithTheme (the vanilla sites' toggle) and
+   account's ThemeToggle: both flip this class alongside data-theme, per
+   design-system's docs/shell-contract.md. Nothing here reads it back —
+   data-theme stays this component's only source of truth — so setting it
+   only widens who else can recognize the current theme. */
+function applyTheme(next: "light" | "dark") {
+  document.documentElement.dataset.theme = next;
+  document.documentElement.classList.toggle("dark-mode", next === "dark");
+}
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -31,14 +40,14 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     store().subscribe((key, value) => {
       if (key !== THEME_KEY) return;
       const next = value === "dark" ? "dark" : "light";
-      document.documentElement.dataset.theme = next;
+      applyTheme(next);
       setTheme(next);
     });
   }, []);
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
+    applyTheme(next);
     store().set(THEME_KEY, next);
     setTheme(next);
   }
@@ -49,13 +58,13 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       onClick={toggle}
-      className={compact ? "btn btn--ghost btn--sm" : "btn btn--ghost w-full justify-start"}
+      className={compact ? "theme-toggle" : "theme-toggle w-full justify-start"}
       aria-label={label}
       // Render neutrally until the client knows the real theme, so the two
       // passes agree and hydration stays quiet.
       title={ready ? label : undefined}
     >
-      {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+      <span aria-hidden="true">{theme === "dark" ? "☀️" : "🌙"}</span>
       {compact ? null : <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
     </button>
   );

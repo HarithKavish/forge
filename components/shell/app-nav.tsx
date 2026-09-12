@@ -20,6 +20,7 @@ import { SignOutButton } from "@/components/ecosystem/sign-out-button";
 import type { ForgeSession } from "@/lib/auth/types";
 import {
   AlertsIcon,
+  ChevronRightIcon,
   CloseIcon,
   HomeIcon,
   IntegrationsIcon,
@@ -49,10 +50,13 @@ function NavList({
   items,
   pathname,
   onNavigate,
+  collapsed = false,
 }: {
   items: NavItem[];
   pathname: string;
   onNavigate?: () => void;
+  /** Icon only — label becomes the hover/a11y title instead. */
+  collapsed?: boolean;
 }) {
   return (
     <ul className="flex flex-col gap-1">
@@ -63,17 +67,34 @@ function NavList({
           <li key={item.href}>
             <Link
               href={item.href}
-              className="nav-link"
+              className="nav-link relative"
               aria-current={active ? "page" : undefined}
               onClick={onNavigate}
+              title={collapsed ? item.label : undefined}
             >
               <Icon size={17} className="flex-none" />
-              <span className="flex-1 truncate">{item.label}</span>
+              {collapsed ? (
+                <span className="sr-only">{item.label}</span>
+              ) : (
+                <span className="flex-1 truncate">{item.label}</span>
+              )}
               {item.badge ? (
-                <span className="pill pill--warning px-1.5 py-0 text-[0.68rem]">
-                  {item.badge}
-                  <span className="sr-only"> items need attention</span>
-                </span>
+                collapsed ? (
+                  // The full count doesn't fit a 72px rail — a dot still
+                  // says "something needs attention" without overflowing it.
+                  <>
+                    <span
+                      className="absolute top-1 right-1 h-2 w-2 rounded-full bg-accent"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">{item.badge} items need attention</span>
+                  </>
+                ) : (
+                  <span className="pill pill--warning px-1.5 py-0 text-[0.68rem]">
+                    {item.badge}
+                    <span className="sr-only"> items need attention</span>
+                  </span>
+                )
               ) : null}
             </Link>
           </li>
@@ -83,7 +104,13 @@ function NavList({
   );
 }
 
-function SessionPanel({ session }: { session: ForgeSession }) {
+function SessionPanel({
+  session,
+  collapsed = false,
+}: {
+  session: ForgeSession;
+  collapsed?: boolean;
+}) {
   // The shared value when there is one, so a picture changed on the account
   // site reaches this nav as quickly as it reaches every other surface.
   const picture = useEcosystemPicture(session.image);
@@ -92,7 +119,10 @@ function SessionPanel({ session }: { session: ForgeSession }) {
     <div className="flex flex-col gap-2 border-t border-border pt-3">
       {/* Tells the rest of the ecosystem who is here, so they stop asking. */}
       <IdentitySync name={session.name} image={session.image} />
-      <div className="flex min-w-0 items-center gap-2.5 px-1">
+      <div
+        className={`flex min-w-0 items-center gap-2.5 px-1 ${collapsed ? "justify-center" : ""}`}
+        title={collapsed ? session.name : undefined}
+      >
         <span className="relative flex h-8 w-8 flex-none" aria-hidden="true">
           {picture ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -108,20 +138,23 @@ function SessionPanel({ session }: { session: ForgeSession }) {
             </span>
           )}
         </span>
-        <span className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-[0.86rem] font-[650]">{session.name}</span>
-          {/* The handle, when the account has one. Never the account id: that
-              is an internal identifier and means nothing to the person. */}
-          {session.username ? (
-            <span className="truncate text-[0.76rem] text-muted">@{session.username}</span>
-          ) : null}
-        </span>
+        {collapsed ? null : (
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[0.86rem] font-[650]">{session.name}</span>
+            {/* The handle, when the account has one. Never the account id:
+                that is an internal identifier and means nothing to the
+                person. */}
+            {session.username ? (
+              <span className="truncate text-[0.76rem] text-muted">@{session.username}</span>
+            ) : null}
+          </span>
+        )}
       </div>
 
-      <ThemeToggle />
+      <ThemeToggle compact={collapsed} />
 
       <form action={signOutAction}>
-          <SignOutButton />
+          <SignOutButton compact={collapsed} />
         </form>
     </div>
   );
@@ -136,6 +169,32 @@ export function AppNav({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // Forge-local, not the ecosystem HarithStore: no other surface has a
+  // sidebar, so this preference has nothing to share across subdomains.
+  // Read lazily on mount, not in useState's initializer, so the server
+  // render and the client's first pass agree (localStorage doesn't exist
+  // on the server) and hydration stays quiet.
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("forge-sidebar-collapsed") === "true");
+    } catch {
+      // A blocked storage API only costs remembering the preference.
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((was) => {
+      const next = !was;
+      try {
+        localStorage.setItem("forge-sidebar-collapsed", String(next));
+      } catch {
+        // Same as above — the toggle itself still works this load.
+      }
+      return next;
+    });
+  }
 
   // A drawer that survives navigation would cover the page it just opened.
   useEffect(() => {
@@ -181,15 +240,36 @@ export function AppNav({
         </button>
       </header>
 
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-dvh w-[262px] flex-none flex-col gap-5 border-r border-border bg-(--chrome-bg) px-4 py-5 backdrop-blur-xl lg:flex">
-        <Brand workspaceName={session.workspaceName} />
-        <nav aria-label="Primary" className="flex-1">
-          <NavList items={primary} pathname={pathname} />
-          <p className="eyebrow mt-6 mb-2 px-3 text-[0.68rem]">Workspace</p>
-          <NavList items={secondary} pathname={pathname} />
+      {/* Desktop sidebar. .site-sidebar (design-system/css/sidebar.css)
+          supplies the floating-pill frame — width, border, radius, shadow,
+          backdrop-blur, sticky inset positioning, and the collapsed-width
+          transition; `hidden lg:flex` still owns responsive show/hide,
+          same breakpoint as the mobile header/drawer below. */}
+      <aside
+        className={`site-sidebar hidden lg:flex${collapsed ? " site-sidebar--collapsed" : ""}`}
+      >
+        <div className="site-sidebar__brand">
+          <Brand workspaceName={session.workspaceName} compact={collapsed} />
+        </div>
+        <nav aria-label="Primary" className="site-sidebar__nav">
+          <NavList items={primary} pathname={pathname} collapsed={collapsed} />
+          {collapsed ? null : (
+            <p className="eyebrow mt-6 mb-2 px-3 text-[0.68rem]">Workspace</p>
+          )}
+          <NavList items={secondary} pathname={pathname} collapsed={collapsed} />
         </nav>
-        <SessionPanel session={session} />
+        <div className="site-sidebar__footer">
+          <SessionPanel session={session} collapsed={collapsed} />
+          <button
+            type="button"
+            className="sidebar-collapse-toggle self-center"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <ChevronRightIcon size={16} className={collapsed ? undefined : "rotate-180"} />
+          </button>
+        </div>
       </aside>
 
       {/* Mobile drawer */}

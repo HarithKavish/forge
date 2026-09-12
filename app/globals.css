@@ -300,6 +300,20 @@ textarea:focus-visible,
     box-shadow: none;
   }
 
+  /* .theme-toggle's border/radius/shadow/padding come from the shared
+     components.css (loaded in app/layout.tsx) — per
+     design-system/docs/shell-contract.md, every surface's theme toggle
+     uses that one class so they all look the same. The shared rule has
+     no display/gap of its own (the vanilla button's only ever a single
+     emoji), so this supplies the icon+label layout Forge's two-child
+     button needs, same as account's globals.css does. */
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
   /* --- Pills / badges --------------------------------------------------- */
 
   .pill {
