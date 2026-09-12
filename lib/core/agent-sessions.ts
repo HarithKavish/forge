@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { agentSessions } from "@/lib/db/schema";
@@ -100,4 +100,35 @@ export async function revokeAgentSession(workspaceId: string, sessionId: string)
     .update(agentSessions)
     .set({ status: "revoked" })
     .where(and(eq(agentSessions.workspaceId, workspaceId), eq(agentSessions.id, sessionId)));
+}
+
+/**
+ * What forge-gateway's periodic revocation check calls
+ * (app/api/gateway/sessions/status/route.ts) to close the gap docs/
+ * WORLDVIEW.md §8 describes: the gateway verifies a pairing token locally
+ * and never re-checks Forge per event, so "Revoke" alone doesn't stop it
+ * from accepting one. This is that re-check, run on an interval instead.
+ *
+ * A `sessionRef` with no row at all comes back "revoked" too -- not found
+ * is not a safe default to treat as active.
+ */
+export async function getSessionStatuses(
+  workspaceId: string,
+  sessionRefs: string[],
+): Promise<Record<string, "active" | "revoked">> {
+  if (sessionRefs.length === 0) return {};
+
+  const rows = await db
+    .select({ sessionRef: agentSessions.sessionRef, status: agentSessions.status })
+    .from(agentSessions)
+    .where(
+      and(eq(agentSessions.workspaceId, workspaceId), inArray(agentSessions.sessionRef, sessionRefs)),
+    );
+
+  const found = new Map(rows.map((row) => [row.sessionRef, row.status]));
+  const result: Record<string, "active" | "revoked"> = {};
+  for (const ref of sessionRefs) {
+    result[ref] = found.get(ref) === "active" ? "active" : "revoked";
+  }
+  return result;
 }

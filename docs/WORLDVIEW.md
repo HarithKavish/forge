@@ -1,14 +1,15 @@
 # Worldview — Design Proposal
 
-Status: **build-order steps 1, 3 and 4 implemented, tested, and reviewed**
-(step 2's responsibilities are folded into step 3's PR — see §12). Step 5
-(sharing) is still an open decision, not started; step 6 (Codex/Gemini
-adapters) is on hold; step 7 items are partially done (visual polish shipped,
-the §6 live-detail relay does not work as originally scoped — see the note
-there). Several sections below were corrected against what building steps
-1-4 actually required, rather than left as the pre-implementation guess —
-each correction says what changed and why, so this stays a design record,
-not just a plan.
+Status: **build-order steps 1, 3 and 4 implemented, tested, reviewed, and
+merged to `development`** (step 2's responsibilities are folded into step
+3's PR — see §12). The revocation gap §8 originally flagged has since been
+closed (bounded to a 5-minute lag, not eliminated). Step 5 (sharing) is a
+decided design, not yet built — see §13a. Step 6 (Codex/Gemini adapters) is on hold; step 7 items are
+partially done (visual polish shipped, the §6 live-detail relay does not
+work as originally scoped — see the note there). Several sections below
+were corrected against what building steps 1-4 actually required, rather
+than left as the pre-implementation guess — each correction says what
+changed and why, so this stays a design record, not just a plan.
 
 Scope of this document: Worldview, a page that visualizes coding-agent
 sessions (Claude Code, Codex, …) live, grouped by project and by the person
@@ -288,23 +289,26 @@ blank-until-first-WS-message. This is a convenience cache only —
 - **Fan-out is scoped server-side by the gateway**, not filtered client-side
   by the browser. A viewer token simply cannot subscribe outside its
   authorized workspaces; there is no payload to filter out of.
-- **Revocation is weaker than originally planned, and worth knowing
-  precisely how.** The `/worldview` "Revoke" button flips the
-  `agent_sessions` row to `revoked` in Forge, and Worldview's own list
-  (which always joins against that row) correctly stops showing the
-  session — that part works as intended. What it does *not* do: because the
-  gateway verifies a pairing token's signature locally (§5.1) and never
-  re-checks Forge on events after the first, revoking in Forge does not
-  invalidate the token itself. The agent keeps running, keeps sending
-  events, and the gateway keeps accepting and broadcasting presence for
-  that `sessionRef` — it's just no longer attached to a row Forge will
-  show anyone. Only the token's own 90-day expiry or rotating
-  `GATEWAY_SHARED_SECRET` (which takes every token down with it) actually
-  stops the gateway from accepting it. This is the real cost of the
-  no-round-trip-per-event design in §5.1, not a hypothetical: "Revoke"
-  reads as "disconnect this agent" but only does "unlist this agent."
-  Closing the gap needs the gateway to check revocation status somehow (a
-  periodic re-check against Forge, most likely), which isn't built.
+- **Revocation is delayed by design, not instant — and this was a real gap
+  until it was closed, not a hypothetical.** The `/worldview` "Revoke"
+  button flips the `agent_sessions` row to `revoked` in Forge; Worldview's
+  own list stops showing the session immediately, since it always joins
+  against that row. But because the gateway verifies a pairing token's
+  signature locally (§5.1) and never re-checked Forge on events at all
+  originally, revoking in Forge used to not invalidate the token itself —
+  the agent could keep running and reporting presence indefinitely. Closed
+  via `POST /api/gateway/sessions/status`: `PresenceRegistry` asks Forge,
+  every 5 minutes, whether every `sessionRef` it's tracking is still
+  `active`, piggybacked on the existing 90-second sweep alarm rather than a
+  new one. A `sessionRef` that comes back `revoked` (or with no row at all —
+  not-found is treated as revoked, not as active) is rejected on every
+  event after that and immediately marked offline if it was online.
+  **The gap is now bounded to at most 5 minutes, not zero** — the
+  no-round-trip-per-event design in §5.1 is still the reason it isn't
+  instant, that tradeoff was kept deliberately rather than reverted.
+  Verified against a mock Forge server: online → revoked → offline within
+  one check cycle, and a further event on the revoked token correctly
+  no-ops rather than resurrecting it.
 
 ## 9. Color and provider identity
 
@@ -395,9 +399,10 @@ ARCHITECTURE.md §10 applies to the inventory.
    a real-time update in the same test run. Same PRs; one real bug (a
    reconnect timer that could force-close a newer, unrelated socket) caught
    by review and fixed before merge.
-5. **Sharing primitive** (see §13) — **not started.** Still an open
-   decision, not just missing code; building an invite flow before deciding
-   what it grants would need redoing.
+5. **Sharing primitive** (see §13a) — **decided, not built.** Per-project
+   ACL; a collaborator can register their own agents on a shared project,
+   not just view it. The invite flow itself and cross-collaborator revoke
+   rights are explicitly left for when this is actually built.
 6. **Additional provider adapters** (Codex, Gemini, …) — **on hold.** Codex's
    hook system doesn't support an HTTP handler (§11.3), so it isn't the same
    shape of work step 3 was; needs its own design pass, not a copy-paste.
@@ -409,27 +414,40 @@ ARCHITECTURE.md §10 applies to the inventory.
    matter of finishing it, but of deciding whether it's worth a genuine
    local companion process at all.
 
+## 13a. Sharing primitive — decided, not yet built
+
+**Shape: a per-project ACL**, not a new workspace role and not a
+viewer-link. A new table grants a specific user read (and, per the next
+paragraph, write) access to a specific project's Worldview data — not the
+whole workspace, and not its resources, billing, or credentials. Chosen
+over reusing `workspace_members` with a limited role because that would
+make a collaborator a workspace member first and scope them down second;
+a per-project grant matches "share *this* project" directly, at the cost
+of being a new concept alongside `workspace_members` rather than a reuse
+of it.
+
+**Rights: view presence *and* register their own agents on the shared
+project.** A collaborator isn't read-only — they can mint their own
+pairing tokens and connect their own sessions to a project they've been
+granted access to, so two people's agents genuinely appear together on
+the same board, matching the scenario that motivated Worldview in the
+first place (docs/WORLDVIEW.md's own opening brief: one person's Claude
+sessions and a collaborator's Codex sessions, same project). This is more
+than the minimum a "presence map" needs and a real scope increase over
+"view-only": granting access to a project now also means granting the
+ability to register sessions against it, so whatever mints pairing tokens
+(`mintPairingTokenAction` today) needs to check this ACL, not just "is
+this the workspace owner," once building starts.
+
+**Still to work out when this gets built, not decided yet:** the actual
+invite flow (who can grant access, how a collaborator without a Forge
+account yet gets one), and whether registering entitles a collaborator to
+revoke *other* people's sessions on the same project or only their own —
+`revokeAgentSession` today only checks `workspaceId`, and would need an
+ownership or per-project-role check added.
+
 ## 13. Open questions
 
-- **Sharing primitive.** Still fully open — `workspace_members` already
-  models many users per workspace with roles (`owner` / `admin` /
-  `member`), but there is no invite flow and no role that grants partial
-  visibility — today a member either sees the whole workspace or isn't in
-  it. Worldview is the first feature that actually needs "see this
-  project's agents, not its resources or credentials." Worth deciding
-  whether that's a new workspace role's read scope, a per-project ACL, or a
-  lighter viewer-link mechanism — before building any invite UI, since it
-  changes what the invite even grants. Nothing built against this yet;
-  every session on `/worldview` today provably belongs to the viewer
-  (single-user workspaces, confirmed by review against `workspaces.personal`)
-  so the question hasn't been forced yet, but the UI (`SessionList`'s
-  single `myColor` prop applied to every avatar) already assumes it isn't
-  answered — that assumption is called out in code, not silent.
-- **Revocation doesn't actually revoke** (§8) — closing this needs the
-  gateway to check a session's status against Forge somehow, which trades
-  away part of the no-round-trip-per-event design in §5.1/§5.3. Worth
-  deciding how much that tradeoff is worth before a real incident forces
-  the answer.
 - **Codex and Gemini adapter shape.** Codex needs a `command`-hook wrapper
   script (§11.3) rather than a native `http` hook — a materially different
   and more involved integration than Claude Code's, not a copy-paste of
