@@ -121,6 +121,23 @@ export const syncStatus = pgEnum("sync_status", [
   "failed",
 ]);
 
+/** docs/WORLDVIEW.md §4 — which coding-agent CLI a registered session is. */
+export const agentProvider = pgEnum("agent_provider", [
+  "claude",
+  "codex",
+  "gemini",
+  "other",
+]);
+
+/**
+ * Registration validity, not presence. Online/offline is never stored here —
+ * it lives only in the gateway's memory. See docs/WORLDVIEW.md §4.
+ */
+export const agentSessionStatus = pgEnum("agent_session_status", [
+  "active",
+  "revoked",
+]);
+
 export const relationshipKind = pgEnum("relationship_kind", [
   "depends_on",
   "attached_to",
@@ -225,6 +242,13 @@ export const workspaceMembers = pgTable("workspace_members", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   role: workspaceRole("role").notNull().default("owner"),
+  /**
+   * Worldview presence color for this person, within this workspace. Hex, or
+   * null to derive one deterministically from userId — see docs/WORLDVIEW.md
+   * §9. Scoped per-workspace rather than on `users` because the same person
+   * may want a different color in different workspaces they collaborate in.
+   */
+  color: text("color"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -309,6 +333,86 @@ export const services = pgTable("services", {
 }, (t) => [
   uniqueIndex("services_project_name_key").on(t.projectId, t.name),
   index("services_workspace_idx").on(t.workspaceId),
+]);
+
+/* -------------------------------------------------------------------------- */
+/* Worldview — agent session registration (docs/WORLDVIEW.md)                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A registered coding-agent session, for Worldview's presence map only.
+ *
+ * This table is configuration, not conversation: it records who a session
+ * belongs to, which project it's tagged to, and which provider it is. It
+ * never holds online/offline state, activity labels, or anything a hook
+ * payload carried — that is deliberately never persisted. See
+ * docs/WORLDVIEW.md §4 for why the split is load-bearing rather than a v1
+ * shortcut.
+ */
+export const agentSessions = pgTable("agent_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  ownerId: uuid("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Nullable like resources.projectId — an unassigned session is real. */
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "set null",
+  }),
+  provider: agentProvider("provider").notNull(),
+  /** Opaque, gateway-issued. Never a resumable token — see docs/WORLDVIEW.md §7. */
+  sessionRef: text("session_ref").notNull(),
+  /** Free-text, person-supplied ("Harith's laptop"). Never provider content. */
+  label: text("label"),
+  status: agentSessionStatus("status").notNull().default("active"),
+  lastRegisteredAt: timestamp("last_registered_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}, (t) => [
+  uniqueIndex("agent_sessions_ref_key").on(t.sessionRef),
+  index("agent_sessions_workspace_idx").on(t.workspaceId),
+  index("agent_sessions_project_idx").on(t.projectId),
+]);
+
+/**
+ * Grants one user access to one project's Worldview data, across a workspace
+ * boundary they are not otherwise a member of — the sharing primitive
+ * decided in docs/WORLDVIEW.md §13a.
+ *
+ * Deliberately a project-level grant, not a workspace role: a collaborator
+ * gains nothing about the workspace's resources, billing, or other
+ * projects, only this one project's registered sessions and presence. A
+ * grant carries one right today (view presence and register their own
+ * sessions on this project) — there is no role/tier column because there is
+ * only one tier; add one if a second is ever needed rather than guessing at
+ * its shape now.
+ */
+export const projectCollaborators = pgTable("project_collaborators", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  invitedBy: uuid("invited_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}, (t) => [
+  uniqueIndex("project_collaborators_project_user_key").on(t.projectId, t.userId),
+  index("project_collaborators_user_idx").on(t.userId),
+  index("project_collaborators_workspace_idx").on(t.workspaceId),
 ]);
 
 /* -------------------------------------------------------------------------- */

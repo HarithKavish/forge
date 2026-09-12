@@ -8,6 +8,7 @@
 
 import type {
   ActivityState,
+  AgentProvider,
   CostAccuracy,
   ResourcePresence,
   StatusLevel,
@@ -89,6 +90,10 @@ export function costAccuracyLabel(accuracy: CostAccuracy): string {
     estimated: "Estimated by Forge",
     unavailable: "Unavailable",
   }[accuracy];
+}
+
+export function agentProviderLabel(provider: AgentProvider): string {
+  return { claude: "Claude Code", codex: "Codex", gemini: "Gemini", other: "Other" }[provider];
 }
 
 export function presenceLabel(presence: ResourcePresence): string {

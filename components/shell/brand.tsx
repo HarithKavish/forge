@@ -46,19 +46,28 @@ export function ForgeLogo({ size = 96 }: { size?: number }) {
 export function Brand({
   workspaceName,
   href = "/home",
+  compact = false,
 }: {
   workspaceName?: string;
   href?: string;
+  /** Icon only — the collapsed sidebar has no room for the wordmark. */
+  compact?: boolean;
 }) {
   return (
-    <Link href={href} className="flex min-w-0 items-center gap-2.5 rounded-2xl">
+    <Link
+      href={href}
+      className="flex min-w-0 items-center gap-2.5 rounded-2xl"
+      title={compact ? "Forge" : undefined}
+    >
       <ForgeMark />
-      <span className="flex min-w-0 flex-col leading-tight">
-        <span className="text-[0.98rem] font-[650] tracking-[0.01em]">Forge</span>
-        {workspaceName ? (
-          <span className="truncate text-[0.78rem] text-muted">{workspaceName}</span>
-        ) : null}
-      </span>
+      {compact ? null : (
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="text-[0.98rem] font-[650] tracking-[0.01em]">Forge</span>
+          {workspaceName ? (
+            <span className="truncate text-[0.78rem] text-muted">{workspaceName}</span>
+          ) : null}
+        </span>
+      )}
     </Link>
   );
 }

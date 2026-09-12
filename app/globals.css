@@ -300,6 +300,20 @@ textarea:focus-visible,
     box-shadow: none;
   }
 
+  /* .theme-toggle's border/radius/shadow/padding come from the shared
+     components.css (loaded in app/layout.tsx) — per
+     design-system/docs/shell-contract.md, every surface's theme toggle
+     uses that one class so they all look the same. The shared rule has
+     no display/gap of its own (the vanilla button's only ever a single
+     emoji), so this supplies the icon+label layout Forge's two-child
+     button needs, same as account's globals.css does. */
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
   /* --- Pills / badges --------------------------------------------------- */
 
   .pill {
@@ -359,6 +373,86 @@ textarea:focus-visible,
     background: var(--status-syncing-bg);
     color: var(--status-syncing);
     border-color: var(--status-syncing-border);
+  }
+
+  /* --- Worldview person color (docs/WORLDVIEW.md §9) --------------------
+     lib/color.ts resolves a person's color to a {light, dark} pair from a
+     validated palette. A dynamic color can't be theme-aware through a plain
+     inline style, so callers set --person-color-light/-dark as inline custom
+     properties on an element carrying this class, and the rule below picks
+     the right one per theme -- the same light/dark-stamp pattern the shared
+     design system itself uses (see :root[data-theme="dark"] above). */
+  .person-color-bg {
+    background-color: var(--person-color-light);
+  }
+  :root[data-theme="dark"] .person-color-bg {
+    background-color: var(--person-color-dark);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .person-color-bg {
+      background-color: var(--person-color-dark);
+    }
+  }
+
+  /* --- Worldview avatar tokens -------------------------------------------
+     Online: a soft repeating pulse -- "doing something". Offline: grayscale
+     + dimmed -- "docked". Reduced motion gets a static ring instead of the
+     animation, never nothing (the state must still read). */
+  .worldview-avatar {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 650;
+    font-size: 0.85rem;
+    transition: filter 200ms ease, opacity 200ms ease;
+  }
+
+  .worldview-avatar--offline {
+    filter: grayscale(0.85);
+    opacity: 0.55;
+  }
+
+  .worldview-avatar--online {
+    animation: worldview-pulse 2.4s ease-out infinite;
+  }
+
+  @keyframes worldview-pulse {
+    0% {
+      box-shadow: 0 0 0 0 var(--status-healthy-border);
+    }
+    70% {
+      box-shadow: 0 0 0 9px rgba(0, 0, 0, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .worldview-avatar--online {
+      animation: none;
+      box-shadow: 0 0 0 3px var(--status-healthy-border);
+    }
+  }
+
+  .worldview-avatar-badge {
+    position: absolute;
+    top: -0.3rem;
+    right: -0.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--border);
+    color: var(--text);
   }
 
   /* --- Navigation ------------------------------------------------------- */
