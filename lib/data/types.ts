@@ -178,6 +178,72 @@ export interface WorkspaceOverview {
   resourcesWithoutCostData: number;
 }
 
+export type AgentProvider = "claude" | "codex" | "gemini" | "other";
+export type AgentSessionStatus = "active" | "revoked";
+
+/**
+ * A registered coding-agent session, for Worldview's presence map. This is
+ * the registration only — no online/offline state, no activity. See
+ * docs/WORLDVIEW.md §4.
+ */
+export interface AgentSession {
+  id: string;
+  workspaceId: string;
+  ownerId: string;
+  projectId?: string;
+  provider: AgentProvider;
+  /** Opaque, safe to show -- never a credential. Correlates with a live PresenceEntry. */
+  sessionRef: string;
+  label?: string;
+  status: AgentSessionStatus;
+  createdAt: string;
+}
+
+/**
+ * A project shared with the current user from a workspace they hold no
+ * membership in (docs/WORLDVIEW.md §13a). Deliberately thinner than
+ * `Project` -- a collaborator sees enough to register/view agent sessions
+ * on it, nothing about its resources, billing, or status.
+ */
+export interface SharedProject {
+  projectId: string;
+  projectName: string;
+  workspaceId: string;
+}
+
+/**
+ * What the registration forms on /worldview actually need from a project --
+ * an id and a name, and whether to label it "(shared)". Deliberately not
+ * `Project` or `SharedProject` directly: the forms merge one workspace's
+ * own projects with others shared into it, and this is the common shape
+ * both reduce to.
+ */
+export interface SelectableProject {
+  id: string;
+  name: string;
+  shared?: boolean;
+}
+
+/**
+ * An `AgentSession` with its owner's Worldview color already resolved
+ * server-side (docs/WORLDVIEW.md §9) -- computed once per distinct
+ * (workspaceId, ownerId) pair on the page, since a session's owner may not
+ * be the viewer once sessions on shared projects are mixed in
+ * (docs/WORLDVIEW.md §13a).
+ */
+export interface DisplaySession extends AgentSession {
+  color: { light: string; dark: string };
+}
+
+/** One grant on a project's Worldview access, for the owner's management UI. */
+export interface ProjectCollaborator {
+  id: string;
+  userId: string;
+  email: string;
+  name?: string;
+  createdAt: string;
+}
+
 /** A project row enriched with the counts the listing needs. */
 export interface ProjectSummary extends Project {
   serviceCount: number;

@@ -77,6 +77,16 @@ export function IntegrationsIcon(props: IconProps) {
   );
 }
 
+export function WorldviewIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3Z" />
+    </Svg>
+  );
+}
+
 export function AlertsIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -216,6 +226,55 @@ export function CostIcon(props: IconProps) {
       <circle cx="12" cy="12" r="9" />
       <path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-2.5.9-2.5 2s.9 1.7 2.5 2 2.5.9 2.5 2-1 2-2.5 2a3 3 0 0 1-3-1.5" />
       <path d="M12 6.5v11" />
+    </Svg>
+  );
+}
+
+/**
+ * Agent-provider glyphs (Worldview, docs/WORLDVIEW.md §9). Deliberately
+ * abstract rather than a reproduction of any provider's actual logo/mark --
+ * these only need to be distinguishable from each other at a glance, not
+ * brand-accurate, and a lookalike trademark would be worse than a plain
+ * shape that's honestly Forge's own.
+ */
+export function AgentClaudeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        d="M12 2.5 14.1 9.9 21.5 12 14.1 14.1 12 21.5 9.9 14.1 2.5 12 9.9 9.9 12 2.5Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </Svg>
+  );
+}
+
+export function AgentCodexIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m9 8-5 4 5 4" />
+      <path d="m15 8 5 4-5 4" />
+    </Svg>
+  );
+}
+
+/** Two overlapping circles -- a "twins" motif, not another sparkle. At badge
+ * size (~13px) a second star-like glyph reads identically to Claude's;
+ * confirmed by rendering both at that size before settling on this shape. */
+export function AgentGeminiIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="9.5" cy="12" r="6" />
+      <circle cx="14.5" cy="12" r="6" />
+    </Svg>
+  );
+}
+
+export function AgentOtherIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
     </Svg>
   );
 }

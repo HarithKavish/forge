@@ -22,6 +22,7 @@ export function ProjectTabs({ projectId }: { projectId: string }) {
         { label: "Resources", href: `${base}/resources` },
         { label: "Activity", href: `${base}/activity` },
         { label: "Costs", href: `${base}/costs` },
+        { label: "Collaborators", href: `${base}/collaborators` },
       ]}
     />
   );
