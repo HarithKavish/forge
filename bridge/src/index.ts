@@ -3,8 +3,6 @@ import { startServer } from "./server.js";
 import { loadState } from "./state.js";
 
 const state = loadState();
-const FORGE_ORIGIN = process.env.FORGE_ORIGIN ?? "https://forge.harithkavish.com";
-const connectUrl = `${FORGE_ORIGIN}/worldview?connectBridge=1&bridgeToken=${state.bridgeToken}&bridgePort=${BRIDGE_PORT}`;
 
 console.log("");
 console.log("  Forge Local Bridge");
@@ -13,11 +11,11 @@ console.log(`  Port: ${BRIDGE_PORT}`);
 console.log("");
 
 if (!state.pairingToken) {
-  console.log("  Not linked to a Forge workspace yet. Open this once:");
-  console.log("");
-  console.log(`  ${connectUrl}`);
-  console.log("");
-  console.log("  It hands this bridge a pairing token automatically -- nothing to paste.");
+  // Nothing to open or paste -- Forge's own page probes this fixed port on
+  // load and links itself automatically the first time it finds this
+  // bridge unlinked (docs/BRIDGE.md "Local bridge discovery").
+  console.log("  Not linked to a Forge workspace yet. Open Worldview in your browser --");
+  console.log("  it detects and links this bridge automatically.");
 } else {
   console.log(`  Linked to workspace ${state.linkedWorkspaceId}.`);
 }
