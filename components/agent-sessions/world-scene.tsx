@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Html, OrbitControls, Stars, Text } from "@react-three/drei";
+import { Html, OrbitControls, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 
@@ -132,15 +132,14 @@ export function WorldScene({
       gl={{ antialias: true }}
       camera={{ position: [0, 16, 24], fov: 50 }}
     >
-      <color attach="background" args={["#030509"]} />
-      <fog attach="fog" args={["#0a1c2e", 40, 120]} />
-      <ambientLight intensity={0.35} />
-      <hemisphereLight args={["#3a5a6e", "#05070a", 0.5]} />
-      <pointLight position={[0, 20, 0]} intensity={0.6} color="#5ad8ff" />
-      <directionalLight position={[-30, 40, -20]} intensity={0.3} color="#7fb8d6" />
+      <color attach="background" args={["#bfe6f5"]} />
+      <fog attach="fog" args={["#cdeaf7", 55, 150]} />
+      <ambientLight intensity={0.75} color="#fff6e0" />
+      <hemisphereLight args={["#bfe6f5", "#5a8f4a", 0.7]} />
+      <directionalLight position={[-35, 45, 20]} intensity={1.4} color="#fff3d6" />
+      <pointLight position={[0, 14, 0]} intensity={0.35} color="#5ad8ff" />
 
       <SkyDome />
-      <Stars radius={140} depth={60} count={3500} factor={3.5} saturation={0} fade speed={0.4} />
       <Mountains />
       <Landscape />
       <Trees excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)} />
@@ -170,7 +169,11 @@ export function WorldScene({
       />
 
       <EffectComposer>
-        <Bloom luminanceThreshold={0.25} luminanceSmoothing={0.9} intensity={1.3} radius={0.7} />
+        {/* Raised well above the old dark-scene value: the sky/ground are
+            bright now, so a low threshold would bloom the whole daytime
+            scene into a haze instead of picking out just the neon platform
+            glow the way it should. */}
+        <Bloom luminanceThreshold={0.92} luminanceSmoothing={0.4} intensity={1.1} radius={0.6} />
       </EffectComposer>
     </Canvas>
   );
@@ -196,7 +199,7 @@ function Landscape() {
         Math.sin(x * 0.12 + 4.1) * Math.sin(y * 0.09) * 0.7;
       const centerFlatten = Math.min(1, Math.max(0, (distance - 18) / 30));
       const edgeFade = 1 - Math.min(1, Math.max(0, (distance - TERRAIN_RADIUS * 0.7) / (TERRAIN_RADIUS * 0.3)));
-      position.setZ(i, hills * centerFlatten * edgeFade);
+      position.setZ(i, hills * centerFlatten * edgeFade * 1.4);
     }
     geo.computeVertexNormals();
     return geo;
@@ -204,7 +207,7 @@ function Landscape() {
 
   return (
     <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]} receiveShadow={false}>
-      <meshStandardMaterial color="#0a1f22" roughness={0.95} metalness={0.05} />
+      <meshStandardMaterial color="#5aa653" roughness={0.9} metalness={0} />
     </mesh>
   );
 }
@@ -235,10 +238,19 @@ function Mountains() {
   return (
     <group>
       {peaks.map((peak, i) => (
-        <mesh key={i} position={peak.position} rotation={[0, peak.rotation, 0]}>
-          <coneGeometry args={[peak.radius, peak.height, 6]} />
-          <meshStandardMaterial color="#16233a" roughness={1} fog />
-        </mesh>
+        <group key={i} position={peak.position} rotation={[0, peak.rotation, 0]}>
+          <mesh>
+            <coneGeometry args={[peak.radius, peak.height, 6]} />
+            <meshStandardMaterial color={i % 2 === 0 ? "#9b8fae" : "#a08a78"} roughness={1} fog />
+          </mesh>
+          {/* A smaller, lighter cone near the tip stands in for a snow cap --
+              cheap way to get the two-tone stylized-peak look from the
+              reference images without a custom gradient shader. */}
+          <mesh position={[0, peak.height * 0.32, 0]}>
+            <coneGeometry args={[peak.radius * 0.42, peak.height * 0.4, 6]} />
+            <meshStandardMaterial color="#f2eef0" roughness={0.9} fog />
+          </mesh>
+        </group>
       ))}
     </group>
   );
@@ -293,28 +305,29 @@ function Trees({ excludeRadius }: { excludeRadius: number }) {
     <group>
       <instancedMesh ref={trunkRef} args={[undefined, undefined, count]}>
         <cylinderGeometry args={[0.06, 0.09, 0.7, 5]} />
-        <meshStandardMaterial color="#2a2118" roughness={1} />
+        <meshStandardMaterial color="#7a5230" roughness={1} />
       </instancedMesh>
       <instancedMesh ref={foliageRef} args={[undefined, undefined, count]}>
         <coneGeometry args={[0.55, 1.5, 6]} />
-        <meshStandardMaterial color="#123524" emissive="#0d5c3a" emissiveIntensity={0.15} roughness={0.9} />
+        <meshStandardMaterial color="#3f9c4a" roughness={0.85} />
       </instancedMesh>
     </group>
   );
 }
 
-/** A gradient sky dome -- dark navy overhead fading to a lighter cyan-glow
- * band near the horizon -- so there's an actual sky and a horizon line
- * where it meets the terrain/mountains, instead of the ground just cutting
- * to flat black. Vertex-colored, no shader needed. */
+/** A gradient sky dome -- bright blue overhead fading to a pale, almost
+ * white haze near the horizon (a clear daytime sky, not a night one) -- so
+ * there's an actual sky and a visible horizon line where it meets the
+ * terrain/mountains, instead of the ground just cutting to flat color.
+ * Vertex-colored, no shader needed. */
 function SkyDome() {
   const geometry = useMemo(() => {
     const radius = 130;
     const geo = new THREE.SphereGeometry(radius, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2 + 0.15);
     const position = geo.attributes.position!;
     const colors = new Float32Array(position.count * 3);
-    const top = new THREE.Color("#050b1a");
-    const horizon = new THREE.Color("#123044");
+    const top = new THREE.Color("#3f9be0");
+    const horizon = new THREE.Color("#eaf7ff");
     for (let i = 0; i < position.count; i += 1) {
       const y = position.getY(i);
       const t = THREE.MathUtils.clamp(1 - y / radius, 0, 1); // 0 at zenith, ~1 near horizon
