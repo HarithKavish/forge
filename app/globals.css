@@ -407,11 +407,15 @@ textarea:focus-visible,
      different one. Same reasoning a code editor's syntax theme doesn't
      follow the IDE chrome's theme. */
   .world-canvas {
-    position: relative;
-    flex: 1 1 auto;
-    min-height: 32rem;
+    /* Fixed and full-viewport, not sized to the leftover flex space next to
+       the nav -- the world is the background of the whole screen, and the
+       nav's translucent glass panel (site-sidebar, z-20 in (app)/layout.tsx)
+       floats over it rather than pushing it aside. */
+    position: fixed;
+    inset: 0;
+    z-index: 0;
     overflow: hidden;
-    background: #05070a;
+    background: #030509;
   }
 
   .world-canvas canvas {
