@@ -143,11 +143,35 @@ export function LocalBridgePanel() {
     void refreshStatus(link);
   }, [link, refreshStatus]);
 
-  // Poll gently while the panel is open -- session list / live status can
-  // change (a new Claude session starts, one finishes) without a page reload.
+  // Real-time status via the bridge's own /live WebSocket -- immediate
+  // updates rather than waiting out a poll interval.
   useEffect(() => {
     if (!link || state.phase !== "connected_linked") return;
-    const interval = setInterval(() => void refreshStatus(link), 8000);
+    const ws = new WebSocket(`ws://127.0.0.1:${link.bridgePort}/live?token=${link.bridgeToken}`);
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data) as { type: string; providerSessionId?: string; status?: DiscoveredSession["status"] };
+      if (message.type !== "status" || !message.providerSessionId || !message.status) return;
+      const providerSessionId = message.providerSessionId;
+      const status = message.status;
+      setState((prev) =>
+        prev.phase === "connected_linked"
+          ? {
+              ...prev,
+              sessions: prev.sessions.map((s) => (s.providerSessionId === providerSessionId ? { ...s, status } : s)),
+            }
+          : prev,
+      );
+    };
+    return () => ws.close();
+  }, [link, state.phase]);
+
+  // Occasional resync, independent of the WebSocket -- catches a session
+  // that started/finished (a genuinely new/removed list entry, which the
+  // live feed's per-session status pushes can't surface) or a WS that
+  // silently dropped.
+  useEffect(() => {
+    if (!link || state.phase !== "connected_linked") return;
+    const interval = setInterval(() => void refreshStatus(link), 30000);
     return () => clearInterval(interval);
   }, [link, state.phase, refreshStatus]);
 
@@ -274,7 +298,8 @@ function ConversationView({
   const [loading, setLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
-  const [streamText, setStreamText] = useState("");
+  const [streamParts, setStreamParts] = useState<NormalizedPart[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -295,13 +320,14 @@ function ConversationView({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamText]);
+  }, [messages, streamParts]);
 
   async function handleSend() {
     const text = prompt.trim();
     if (!text || sending) return;
     setSending(true);
-    setStreamText("");
+    setSendError(null);
+    setStreamParts([]);
     setMessages((prev) => [...prev, { uuid: `local-${Date.now()}`, role: "user", parts: [{ type: "text", text }] }]);
     setPrompt("");
 
@@ -311,12 +337,22 @@ function ConversationView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: text }),
       });
+      // The bridge returns a plain JSON error body (never text/event-stream)
+      // for anything that fails before the resume actually starts (session
+      // gone, bad request) -- a Response always has a non-null body
+      // regardless of status, so this check has to come before treating it
+      // as an SSE stream, not be inferred from body presence.
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || `Bridge returned ${res.status}`);
+      }
       if (!res.body) throw new Error("No response stream");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assembledText = "";
+      const collected: NormalizedPart[] = [];
+      let doneError: string | undefined;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -326,23 +362,39 @@ function ConversationView({
         buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice("data: ".length)) as { type: string; text?: string };
+          const event = JSON.parse(line.slice("data: ".length)) as {
+            type: string;
+            text?: string;
+            toolUseId?: string;
+            name?: string;
+            isError?: boolean;
+            ok?: boolean;
+            error?: string;
+          };
           if (event.type === "text" && event.text) {
-            assembledText += event.text;
-            setStreamText(assembledText);
+            const last = collected[collected.length - 1];
+            if (last?.type === "text") last.text += event.text;
+            else collected.push({ type: "text", text: event.text });
+            setStreamParts([...collected]);
+          } else if (event.type === "tool_call" && event.toolUseId && event.name) {
+            collected.push({ type: "tool_call", toolUseId: event.toolUseId, name: event.name, input: undefined });
+            setStreamParts([...collected]);
+          } else if (event.type === "tool_result" && event.toolUseId) {
+            collected.push({ type: "tool_result", toolUseId: event.toolUseId, text: event.text ?? "", isError: event.isError });
+            setStreamParts([...collected]);
+          } else if (event.type === "done" && !event.ok) {
+            doneError = event.error || "The session could not continue.";
           }
         }
       }
 
-      if (assembledText) {
-        setMessages((prev) => [
-          ...prev,
-          { uuid: `local-reply-${Date.now()}`, role: "assistant", parts: [{ type: "text", text: assembledText }] },
-        ]);
+      if (collected.length > 0) {
+        setMessages((prev) => [...prev, { uuid: `local-reply-${Date.now()}`, role: "assistant", parts: collected }]);
       }
-      setStreamText("");
+      setStreamParts([]);
+      if (doneError) setSendError(doneError);
     } catch (error) {
-      console.error("Failed to continue session:", error);
+      setSendError(error instanceof Error ? error.message : "Failed to continue this session.");
     } finally {
       setSending(false);
     }
@@ -363,11 +415,13 @@ function ConversationView({
         ) : (
           messages.map((message) => <MessageBubble key={message.uuid} message={message} />)
         )}
-        {streamText ? (
-          <MessageBubble message={{ uuid: "streaming", role: "assistant", parts: [{ type: "text", text: streamText }] }} />
+        {streamParts.length > 0 ? (
+          <MessageBubble message={{ uuid: "streaming", role: "assistant", parts: streamParts }} />
         ) : null}
         <div ref={bottomRef} />
       </div>
+
+      {sendError ? <p className="text-[0.78rem] text-error">{sendError}</p> : null}
 
       <div className="flex gap-2">
         <input
