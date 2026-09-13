@@ -1,16 +1,14 @@
 "use client";
 
 /**
- * The Worldview canvas: registered sessions grouped by project ("islands"),
- * shown as avatar tokens with live presence layered on top.
+ * Worldview itself: not a page of sections, but a canvas of "islands" -- one
+ * per project, holding that project's agent-session avatar tokens, plus one
+ * permanent empty island with a "+" for connecting a new project/agent.
+ * Everything else (pairing a real agent, registering one by hand) lives
+ * behind that "+", in a modal, rather than always on screen.
  *
- * Connects directly to forge-gateway's WebSocket endpoint (not through
- * Forge's own server -- see docs/WORLDVIEW.md §5.4), using a short-lived
- * viewer token fetched from /api/worldview/viewer-token. A session shows
- * "docked" (offline look, no pulse) until the gateway actually reports it
- * online, which may be never (a manually registered session, or one whose
- * agent hasn't connected yet) -- that's the honest state, not a loading
- * placeholder.
+ * Owns the same forge-gateway WebSocket connection session-list.tsx used to
+ * own -- moved here since this is now the thing rendering presence.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -19,8 +17,10 @@ import { revokeAgentSessionAction } from "@/lib/data/actions";
 import { agentProviderLabel, relativeTime } from "@/lib/format";
 import { personColorStyle } from "@/lib/color";
 import type { DisplaySession, SelectableProject } from "@/lib/data/types";
-import { EmptyState, SectionCard } from "@/components/ui/page";
+import { PlusIcon, CloseIcon } from "@/components/ui/icons";
 import { ProviderIcon } from "@/components/agent-sessions/provider-icon";
+import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
+import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
 
 type PresenceState = "online" | "offline";
 interface PresenceEntry {
@@ -41,7 +41,7 @@ function wsUrl(gatewayUrl: string, token: string): string {
   return url.toString();
 }
 
-export function SessionList({
+export function WorldCanvas({
   sessions,
   projects,
   gatewayUrl,
@@ -53,17 +53,13 @@ export function SessionList({
   gatewayUrl?: string;
   /**
    * Who can revoke what (docs/WORLDVIEW.md §13a): a session's own owner, or
-   * whoever owns the workspace it's registered in. Sessions on this page no
-   * longer all belong to the viewer once shared projects are mixed in, so
-   * the Revoke control can't just always be shown -- offering it for a
-   * session neither check passes would silently no-op
-   * (revokeAgentSession's UPDATE matches zero rows) while the page still
-   * redirects as if it worked.
+   * whoever owns the workspace it's registered in.
    */
   viewerId: string;
   viewerWorkspaceId: string;
 }) {
   const [presence, setPresence] = useState<Map<string, PresenceEntry>>(new Map());
+  const [addOpen, setAddOpen] = useState(false);
   const stopped = useRef(false);
 
   useEffect(() => {
@@ -96,8 +92,6 @@ export function SessionList({
         try {
           message = JSON.parse(event.data);
         } catch {
-          // A malformed frame shouldn't take down the listener for every
-          // message after it -- drop this one and keep the connection.
           return;
         }
         if (message.type === "snapshot") {
@@ -128,24 +122,13 @@ export function SessionList({
     };
   }, [gatewayUrl]);
 
-  if (sessions.length === 0) {
-    return (
-      <SectionCard title="The board is empty">
-        <EmptyState
-          title="No sessions registered yet"
-          description="Connect a real agent or register one by hand below to see it here."
-        />
-      </SectionCard>
-    );
-  }
-
   const groups = groupByProject(sessions, projects);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {groups.map((group) => (
-        <SectionCard key={group.projectId ?? "unassigned"} title={group.projectName}>
-          <div className="flex flex-wrap gap-x-5 gap-y-4">
+    <div className="world-canvas">
+      <div className="world-islands">
+        {groups.map((group) => (
+          <Island key={group.projectId ?? "unassigned"} name={group.projectName}>
             {group.sessions.map((session) => (
               <AvatarToken
                 key={session.id}
@@ -154,9 +137,112 @@ export function SessionList({
                 canRevoke={session.ownerId === viewerId || session.workspaceId === viewerWorkspaceId}
               />
             ))}
+          </Island>
+        ))}
+
+        <button
+          type="button"
+          className="world-island world-island--empty"
+          onClick={() => setAddOpen(true)}
+          aria-haspopup="dialog"
+        >
+          <span className="world-island-plus">
+            <PlusIcon size={22} />
+          </span>
+          <span className="world-island-add-label">Add a project</span>
+        </button>
+      </div>
+
+      {addOpen ? (
+        <AddAgentModal projects={projects} gatewayUrl={gatewayUrl} onClose={() => setAddOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+function AddAgentModal({
+  projects,
+  gatewayUrl,
+  onClose,
+}: {
+  projects: SelectableProject[];
+  gatewayUrl?: string;
+  onClose: () => void;
+}) {
+  const [advanced, setAdvanced] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="world-modal"
+      aria-label="Connect a project and agent"
+      onClose={onClose}
+      onClick={(event) => {
+        // A click that lands on the <dialog> element itself (its backdrop
+        // padding area), not on anything inside the content wrapper below,
+        // is a backdrop click -- close, same as clicking outside a normal
+        // modal would.
+        if (event.target === dialogRef.current) onClose();
+      }}
+    >
+      <div className="world-modal-content">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="title-lg">Connect an agent</h2>
+            <p className="mt-1 text-sm text-muted">
+              Mint a token, add it to the agent&rsquo;s hook config, and it shows up here.
+            </p>
           </div>
-        </SectionCard>
-      ))}
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm !rounded-full !p-2"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <CloseIcon size={16} />
+          </button>
+        </div>
+
+        <PairSessionForm projects={projects} gatewayUrl={gatewayUrl} />
+
+        <div className="mt-5 border-t border-border pt-4">
+          {advanced ? (
+            <>
+              <p className="mb-3 text-[0.8rem] text-muted">
+                Register a session by hand, without wiring up a hook. Mostly for testing.
+              </p>
+              <RegisterSessionForm projects={projects} />
+            </>
+          ) : (
+            <button
+              type="button"
+              className="text-[0.82rem] text-muted underline-offset-2 hover:text-text hover:underline"
+              onClick={() => setAdvanced(true)}
+            >
+              Register a session by hand instead
+            </button>
+          )}
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function Island({ name, children }: { name: string; children: React.ReactNode }) {
+  const hasSessions = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  return (
+    <div className="world-island">
+      <p className="world-island-name">{name}</p>
+      {hasSessions ? (
+        <div className="world-island-tokens">{children}</div>
+      ) : (
+        <p className="world-island-empty-note">No sessions yet</p>
+      )}
     </div>
   );
 }
@@ -185,6 +271,16 @@ function groupByProject(
     projectName: projects.find((p) => p.id === projectId)?.name ?? "Unknown project",
     sessions: group,
   }));
+
+  // Every project shows as an island even with zero sessions registered to
+  // it yet -- otherwise a freshly created project never appears until
+  // someone pairs an agent to it, which is backwards for "the world shows
+  // what exists."
+  for (const project of projects) {
+    if (!byId.has(project.id)) {
+      groups.push({ projectId: project.id, projectName: project.name, sessions: [] });
+    }
+  }
 
   if (unassigned.length > 0) {
     groups.push({ projectId: undefined, projectName: "No project", sessions: unassigned });
