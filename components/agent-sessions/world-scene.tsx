@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Html, OrbitControls, Text } from "@react-three/drei";
+import { Html, OrbitControls, Stars, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 
@@ -132,13 +132,15 @@ export function WorldScene({
       gl={{ antialias: true }}
       camera={{ position: [0, 16, 24], fov: 50 }}
     >
-      <color attach="background" args={["#050b14"]} />
-      <fog attach="fog" args={["#050b14", 35, 105]} />
+      <color attach="background" args={["#030509"]} />
+      <fog attach="fog" args={["#0a1c2e", 40, 120]} />
       <ambientLight intensity={0.35} />
       <hemisphereLight args={["#3a5a6e", "#05070a", 0.5]} />
       <pointLight position={[0, 20, 0]} intensity={0.6} color="#5ad8ff" />
       <directionalLight position={[-30, 40, -20]} intensity={0.3} color="#7fb8d6" />
 
+      <SkyDome />
+      <Stars radius={140} depth={60} count={3500} factor={3.5} saturation={0} fade speed={0.4} />
       <Mountains />
       <Landscape />
       <Trees excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)} />
@@ -163,6 +165,8 @@ export function WorldScene({
         maxDistance={70}
         maxPolarAngle={Math.PI / 2.15}
         target={[0, 1, 0]}
+        autoRotate
+        autoRotateSpeed={0.35}
       />
 
       <EffectComposer>
@@ -299,6 +303,37 @@ function Trees({ excludeRadius }: { excludeRadius: number }) {
   );
 }
 
+/** A gradient sky dome -- dark navy overhead fading to a lighter cyan-glow
+ * band near the horizon -- so there's an actual sky and a horizon line
+ * where it meets the terrain/mountains, instead of the ground just cutting
+ * to flat black. Vertex-colored, no shader needed. */
+function SkyDome() {
+  const geometry = useMemo(() => {
+    const radius = 130;
+    const geo = new THREE.SphereGeometry(radius, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2 + 0.15);
+    const position = geo.attributes.position!;
+    const colors = new Float32Array(position.count * 3);
+    const top = new THREE.Color("#050b1a");
+    const horizon = new THREE.Color("#123044");
+    for (let i = 0; i < position.count; i += 1) {
+      const y = position.getY(i);
+      const t = THREE.MathUtils.clamp(1 - y / radius, 0, 1); // 0 at zenith, ~1 near horizon
+      const mixed = top.clone().lerp(horizon, Math.pow(t, 1.6));
+      colors[i * 3] = mixed.r;
+      colors[i * 3 + 1] = mixed.g;
+      colors[i * 3 + 2] = mixed.b;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return geo;
+  }, []);
+
+  return (
+    <mesh geometry={geometry}>
+      <meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} />
+    </mesh>
+  );
+}
+
 function GridFloor() {
   const geometry = useMemo(() => {
     const half = GRID_SIZE / 2;
@@ -331,8 +366,14 @@ function HexPlatformBase({
   dashed?: boolean;
 }) {
   return (
-    <group>
-      <mesh position={[0, PLATFORM_HEIGHT / 2, 0]} rotation={[0, Math.PI / 6, 0]}>
+    // A single outer Y-rotation shared by both meshes, via nesting rather
+    // than a compound per-mesh Euler -- mixing rotation.x and rotation.z on
+    // the flat ring while the cylinder used a plain rotation.y produced two
+    // *different* final orientations (Euler composition order), so the
+    // glowing ring outline and the solid hex body didn't actually line up:
+    // that's what was overlapping in the screenshot, not the hex-grid math.
+    <group rotation={[0, Math.PI / 6, 0]}>
+      <mesh position={[0, PLATFORM_HEIGHT / 2, 0]}>
         <cylinderGeometry args={[PLATFORM_RADIUS, PLATFORM_RADIUS * 1.04, PLATFORM_HEIGHT, 6]} />
         <meshStandardMaterial
           color="#0d1620"
@@ -342,7 +383,7 @@ function HexPlatformBase({
           metalness={0.3}
         />
       </mesh>
-      <mesh position={[0, PLATFORM_HEIGHT + 0.01, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 6]}>
+      <mesh position={[0, PLATFORM_HEIGHT + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         {dashed ? (
           <ringGeometry args={[PLATFORM_RADIUS - 0.12, PLATFORM_RADIUS, 6, 1, 0, Math.PI * 1.7]} />
         ) : (

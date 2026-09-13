@@ -18,8 +18,19 @@ export default async function AppLayout({
 
   return (
     <div className="relative z-10 flex min-h-dvh flex-col lg:flex-row">
-      <AppNav session={session} attentionCount={alerts.length} />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/*
+        Explicit z-20 wrapper, not relying on .site-sidebar's own stacking:
+        Worldview's canvas renders position:fixed;inset:0 (world-canvas in
+        globals.css) so it can sit behind the nav's translucent glass panel
+        instead of being pushed into the leftover flex space next to it --
+        the nav is sticky with z-index:auto, which without this wrapper
+        would stack by DOM order (it comes before <main> in the tree, so a
+        fixed descendant of <main> would paint over it).
+      */}
+      <div className="relative z-20 lg:flex-none">
+        <AppNav session={session} attentionCount={alerts.length} />
+      </div>
+      <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
         <ContentFrame>{children}</ContentFrame>
       </main>
     </div>
