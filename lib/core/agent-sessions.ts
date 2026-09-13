@@ -90,6 +90,12 @@ export async function registerGatewaySession(
     provider: AgentSessionRow["provider"];
     projectId?: string | null;
     label?: string | null;
+    /** The provider's own session id and cwd, when the caller is the
+     *  bridge rather than the old per-session pairing flow (which has
+     *  neither — a pairing token identified one session by construction,
+     *  so there was nothing else to pass). */
+    providerSessionId?: string | null;
+    workingDirectory?: string | null;
   },
 ): Promise<AgentSessionRow> {
   await db
@@ -101,6 +107,8 @@ export async function registerGatewaySession(
       provider: input.provider,
       label: input.label || null,
       sessionRef,
+      providerSessionId: input.providerSessionId || null,
+      workingDirectory: input.workingDirectory || null,
       status: "active",
     })
     .onConflictDoNothing({ target: agentSessions.sessionRef });

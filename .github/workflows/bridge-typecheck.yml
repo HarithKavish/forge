@@ -1,0 +1,24 @@
+name: Bridge Typecheck
+
+# bridge/ is a separate package (its own node_modules, deliberately not
+# part of the root install -- see bridge/README.md) and isn't touched by
+# `next build`, so nothing else in CI ever compiles it. This is the one
+# check that would have caught a real API-signature mismatch against
+# @anthropic-ai/claude-agent-sdk before it reached a PR.
+on:
+  pull_request:
+    paths:
+      - "bridge/**"
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+        working-directory: bridge
+      - run: npm run typecheck
+        working-directory: bridge

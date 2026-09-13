@@ -29,6 +29,13 @@
       "when": 1789194731585,
       "tag": "0003_add_project_collaborators",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789296215999,
+      "tag": "0004_bitter_maximus",
+      "breakpoints": true
     }
   ]
 }

@@ -362,8 +362,26 @@ export const agentSessions = pgTable("agent_sessions", {
     onDelete: "set null",
   }),
   provider: agentProvider("provider").notNull(),
-  /** Opaque, gateway-issued. Never a resumable token — see docs/WORLDVIEW.md §7. */
+  /**
+   * Opaque, gateway-derived identity used for presence lookups. For a
+   * bridge-registered session this is `sr_<provider>_<providerSessionId>` —
+   * deterministic from the real session id, not a token hash — so display
+   * only, never a resumable credential (docs/BRIDGE.md "Session identity
+   * fix"). Old pairing-derived refs (`sr_` + hash of a per-session token)
+   * still work exactly as before; this column's format changed, not its role.
+   */
   sessionRef: text("session_ref").notNull(),
+  /**
+   * The provider's own session identifier (e.g. Claude Code's session
+   * UUID) — nullable because it doesn't exist for a manually-registered or
+   * pre-bridge row. This, not sessionRef, is what the bridge/SDK actually
+   * resumes against.
+   */
+  providerSessionId: text("provider_session_id"),
+  /** Working directory the session was reported from, if known. For
+   *  resuming correctly (the SDK's own resume looks sessions up by cwd)
+   *  and for a more honest project/session label than sessionRef ever gave. */
+  workingDirectory: text("working_directory"),
   /** Free-text, person-supplied ("Harith's laptop"). Never provider content. */
   label: text("label"),
   status: agentSessionStatus("status").notNull().default("active"),

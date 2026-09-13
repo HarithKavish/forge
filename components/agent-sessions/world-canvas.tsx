@@ -20,6 +20,7 @@ import type { DisplaySession, SelectableProject } from "@/lib/data/types";
 import { CloseIcon } from "@/components/ui/icons";
 import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
 import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
+import { LocalBridgePanel } from "@/components/agent-sessions/local-bridge-panel";
 import type { PresenceEntry, WorldGroup } from "@/components/agent-sessions/world-scene";
 
 const WorldScene = dynamic(
@@ -171,9 +172,9 @@ function AddAgentModal({
       <div className="world-modal-content">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="title-lg">Connect an agent</h2>
+            <h2 className="title-lg">Local Claude Code</h2>
             <p className="mt-1 text-sm text-muted">
-              Mint a token, add it to the agent&rsquo;s hook config, and it shows up here.
+              Discovers sessions already running on this machine — no per-session setup.
             </p>
           </div>
           <button
@@ -186,23 +187,33 @@ function AddAgentModal({
           </button>
         </div>
 
-        <PairSessionForm projects={projects} gatewayUrl={gatewayUrl} />
+        <LocalBridgePanel />
 
         <div className="mt-5 border-t border-border pt-4">
           {advanced ? (
-            <>
-              <p className="mb-3 text-[0.8rem] text-muted">
-                Register a session by hand, without wiring up a hook. Mostly for testing.
-              </p>
-              <RegisterSessionForm projects={projects} />
-            </>
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="mb-2 text-[0.8rem] font-medium">Connect a remote agent</p>
+                <p className="mb-3 text-[0.8rem] text-muted">
+                  For a machine Forge can&rsquo;t reach a local bridge on. Mints a token to paste into that
+                  machine&rsquo;s hook config.
+                </p>
+                <PairSessionForm projects={projects} gatewayUrl={gatewayUrl} />
+              </div>
+              <div className="border-t border-border pt-4">
+                <p className="mb-3 text-[0.8rem] text-muted">
+                  Register a session by hand, without wiring up a hook. Mostly for testing.
+                </p>
+                <RegisterSessionForm projects={projects} />
+              </div>
+            </div>
           ) : (
             <button
               type="button"
               className="text-[0.82rem] text-muted underline-offset-2 hover:text-text hover:underline"
               onClick={() => setAdvanced(true)}
             >
-              Register a session by hand instead
+              Connect a remote agent instead
             </button>
           )}
         </div>

@@ -31,10 +31,18 @@ export async function POST(request: NextRequest) {
   }
 
   let pairingToken: string;
+  let providerSessionId: string | undefined;
+  let cwd: string | undefined;
   try {
-    const body = (await request.json()) as { pairingToken?: string };
+    const body = (await request.json()) as {
+      pairingToken?: string;
+      providerSessionId?: string;
+      cwd?: string;
+    };
     if (!body.pairingToken) throw new Error("pairingToken required");
     pairingToken = body.pairingToken;
+    providerSessionId = body.providerSessionId;
+    cwd = body.cwd;
   } catch {
     return NextResponse.json({ error: "pairingToken required" }, { status: 400 });
   }
@@ -49,12 +57,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const session = await registerGatewaySession(
-    claims.workspaceId,
-    claims.ownerId,
-    deriveSessionRef(pairingToken),
-    { provider: claims.provider, projectId: claims.projectId, label: claims.label },
-  );
+  // A bridge event carries the real provider session id, so its sessionRef
+  // is derived from that (must match forge-gateway's own
+  // `sr_<provider>_<providerSessionId>` exactly, since that's the row
+  // Worldview's presence lookups join against). The old per-session pairing
+  // flow never had one, so it keeps deriving sessionRef from the token
+  // itself -- unchanged, still one session per token by construction.
+  const sessionRef = providerSessionId
+    ? `sr_${claims.provider}_${providerSessionId}`
+    : deriveSessionRef(pairingToken);
+
+  const session = await registerGatewaySession(claims.workspaceId, claims.ownerId, sessionRef, {
+    provider: claims.provider,
+    projectId: claims.projectId,
+    label: claims.label,
+    providerSessionId,
+    workingDirectory: cwd,
+  });
 
   return NextResponse.json({ sessionRef: session.sessionRef, workspaceId: claims.workspaceId });
 }
