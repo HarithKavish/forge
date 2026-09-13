@@ -408,9 +408,8 @@ textarea:focus-visible,
      follow the IDE chrome's theme. */
   .world-canvas {
     position: relative;
-    height: calc(100dvh - 8rem);
+    flex: 1 1 auto;
     min-height: 32rem;
-    border-radius: var(--radius-card);
     overflow: hidden;
     background: #05070a;
   }

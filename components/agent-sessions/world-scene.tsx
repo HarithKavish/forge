@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * The actual 3D world: a Tron-style neon grid, one glowing platform per
- * project, one light-cycle-ish glowing marker per agent session sitting or
- * orbiting on its platform, and one dashed "+" platform for adding a
+ * The actual 3D world: a landscape with a Tron-style neon grid hovering just
+ * above it, distant mountains and scattered trees for depth, one raised
+ * hexagonal platform per project (positioned on a real hex grid, not a
+ * simple ring), agent sessions as glowing markers orbiting or docked on
+ * their platform, and one dashed "+" hex platform for adding a
  * project/agent. Visual language borrowed deliberately from
  * github.com/Kvadratni/thegrid (grid floor, bloom, per-agent neon color) --
  * adapted to Worldview's actual data model (projects + sessions, not a
@@ -15,7 +17,7 @@
  * scope and cannot run server-side).
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
@@ -39,26 +41,73 @@ export interface PresenceEntry {
   lastEventAt: number;
 }
 
-const GRID_SIZE = 80;
-const GRID_DIVISIONS = 40;
-/** Platform footprint is a radius-3 circle (diameter 6) -- the ring radius
- * has to grow with the platform count or they start overlapping past
- * roughly nine of them (a ring this size only has ~56.5 units of
- * circumference to share). */
-const PLATFORM_DIAMETER = 6.4;
+const GRID_SIZE = 140;
+const GRID_DIVISIONS = 56;
+const TERRAIN_RADIUS = 110;
+/** Circumradius of one hex platform, and the hex-grid cell size -- equal so
+ * platforms tile edge-to-edge ("fit the grid") rather than floating free on
+ * a ring. */
+const HEX_SIZE = 3.8;
+const PLATFORM_RADIUS = HEX_SIZE - 0.35;
+const PLATFORM_HEIGHT = 0.7;
+
+/** Axial hex directions, used to walk each ring of the spiral. */
+const HEX_DIRECTIONS: [number, number][] = [
+  [1, 0],
+  [1, -1],
+  [0, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, 1],
+];
+
+function hexRing(radius: number): [number, number][] {
+  if (radius === 0) return [[0, 0]];
+  const results: [number, number][] = [];
+  let q = HEX_DIRECTIONS[4]![0] * radius;
+  let r = HEX_DIRECTIONS[4]![1] * radius;
+  for (let side = 0; side < 6; side += 1) {
+    const [dq, dr] = HEX_DIRECTIONS[side]!;
+    for (let step = 0; step < radius; step += 1) {
+      results.push([q, r]);
+      q += dq;
+      r += dr;
+    }
+  }
+  return results;
+}
+
+/** Axial coordinates spiraling outward from the center -- ring 0 (the
+ * origin) first, so the first project always lands in the middle of the
+ * world rather than at a corner. */
+function hexSpiral(count: number): [number, number][] {
+  const results: [number, number][] = [];
+  let radius = 0;
+  while (results.length < count) {
+    results.push(...hexRing(radius));
+    radius += 1;
+  }
+  return results.slice(0, count);
+}
+
+/** Flat-top axial-to-world conversion, sized so adjacent hex cells are
+ * exactly HEX_SIZE apart -- platforms tile the grid rather than merely
+ * sitting near it. */
+function hexToWorld(q: number, r: number): [number, number] {
+  const x = HEX_SIZE * 1.5 * q;
+  const z = HEX_SIZE * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r);
+  return [x, z];
+}
 
 function layoutPositions(count: number): [number, number][] {
-  // Platforms on a ring around the origin, evenly spaced, so the scene
-  // reads sensibly whether there's 1 project or a dozen.
-  if (count <= 1) return [[0, 0]];
-  const minRadius = 9;
-  const radius = Math.max(minRadius, (count * PLATFORM_DIAMETER) / (Math.PI * 2));
-  const positions: [number, number][] = [];
-  for (let i = 0; i < count; i += 1) {
-    const angle = (i / count) * Math.PI * 2;
-    positions.push([Math.cos(angle) * radius, Math.sin(angle) * radius]);
-  }
-  return positions;
+  return hexSpiral(count).map(([q, r]) => hexToWorld(q, r));
+}
+
+/** Deterministic pseudo-random in [0, 1) -- stable across renders (no
+ * Math.random flicker on re-layout) without pulling in a seeded-RNG dep. */
+function pseudoRandom(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 export function WorldScene({
@@ -81,13 +130,18 @@ export function WorldScene({
       shadows={false}
       dpr={[1, 1.75]}
       gl={{ antialias: true }}
-      camera={{ position: [0, 14, 20], fov: 50 }}
+      camera={{ position: [0, 16, 24], fov: 50 }}
     >
-      <color attach="background" args={["#05070a"]} />
-      <fog attach="fog" args={["#05070a", 25, 60]} />
-      <ambientLight intensity={0.15} />
+      <color attach="background" args={["#050b14"]} />
+      <fog attach="fog" args={["#050b14", 35, 105]} />
+      <ambientLight intensity={0.35} />
+      <hemisphereLight args={["#3a5a6e", "#05070a", 0.5]} />
       <pointLight position={[0, 20, 0]} intensity={0.6} color="#5ad8ff" />
+      <directionalLight position={[-30, 40, -20]} intensity={0.3} color="#7fb8d6" />
 
+      <Mountains />
+      <Landscape />
+      <Trees excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)} />
       <GridFloor />
 
       {groups.map((group, index) => (
@@ -106,7 +160,7 @@ export function WorldScene({
       <OrbitControls
         enablePan={false}
         minDistance={10}
-        maxDistance={34}
+        maxDistance={70}
         maxPolarAngle={Math.PI / 2.15}
         target={[0, 1, 0]}
       />
@@ -115,6 +169,135 @@ export function WorldScene({
         <Bloom luminanceThreshold={0.25} luminanceSmoothing={0.9} intensity={1.3} radius={0.7} />
       </EffectComposer>
     </Canvas>
+  );
+}
+
+/** The ground itself -- a real (if low-poly) landscape: a displaced plane
+ * with rolling hills, not a flat void. The neon grid (GridFloor) hovers a
+ * hair above it like a highway overlay, rather than being the ground. */
+function Landscape() {
+  const geometry = useMemo(() => {
+    const segments = 90;
+    const geo = new THREE.PlaneGeometry(TERRAIN_RADIUS * 2, TERRAIN_RADIUS * 2, segments, segments);
+    const position = geo.attributes.position!;
+    for (let i = 0; i < position.count; i += 1) {
+      const x = position.getX(i);
+      const y = position.getY(i); // pre-rotation "y" is world Z once laid flat
+      const distance = Math.sqrt(x * x + y * y);
+      // Layered sine hills, damped toward the center so the platform cluster
+      // sits on relatively flat ground, and damped again past the terrain
+      // radius edge so it doesn't read as an abrupt cliff.
+      const hills =
+        Math.sin(x * 0.05) * Math.cos(y * 0.05) * 1.6 +
+        Math.sin(x * 0.12 + 4.1) * Math.sin(y * 0.09) * 0.7;
+      const centerFlatten = Math.min(1, Math.max(0, (distance - 18) / 30));
+      const edgeFade = 1 - Math.min(1, Math.max(0, (distance - TERRAIN_RADIUS * 0.7) / (TERRAIN_RADIUS * 0.3)));
+      position.setZ(i, hills * centerFlatten * edgeFade);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
+  return (
+    <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]} receiveShadow={false}>
+      <meshStandardMaterial color="#0a1f22" roughness={0.95} metalness={0.05} />
+    </mesh>
+  );
+}
+
+/** A low-poly mountain range at the horizon -- just for depth and scale,
+ * fading into fog rather than rendered in bloom-bright detail. */
+function Mountains() {
+  const peaks = useMemo(() => {
+    const count = 22;
+    return Array.from({ length: count }, (_, i) => {
+      const angle = (i / count) * Math.PI * 2 + pseudoRandom(i) * 0.2;
+      const distance = 85 + pseudoRandom(i + 50) * 25;
+      const height = 14 + pseudoRandom(i + 100) * 22;
+      const radius = 10 + pseudoRandom(i + 150) * 14;
+      return {
+        position: [Math.cos(angle) * distance, height / 2 - 1, Math.sin(angle) * distance] as [
+          number,
+          number,
+          number,
+        ],
+        height,
+        radius,
+        rotation: pseudoRandom(i + 200) * Math.PI,
+      };
+    });
+  }, []);
+
+  return (
+    <group>
+      {peaks.map((peak, i) => (
+        <mesh key={i} position={peak.position} rotation={[0, peak.rotation, 0]}>
+          <coneGeometry args={[peak.radius, peak.height, 6]} />
+          <meshStandardMaterial color="#16233a" roughness={1} fog />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** Simple low-poly trees (cone + trunk) scattered around the platform
+ * cluster, thinning out toward the mountains. Instanced since there can be
+ * several dozen. */
+function Trees({ excludeRadius }: { excludeRadius: number }) {
+  const foliageRef = useRef<THREE.InstancedMesh>(null);
+  const trunkRef = useRef<THREE.InstancedMesh>(null);
+  const count = 70;
+
+  const trees = useMemo(() => {
+    const items: { x: number; z: number; scale: number; rotation: number }[] = [];
+    let attempts = 0;
+    while (items.length < count && attempts < count * 6) {
+      attempts += 1;
+      const seed = attempts * 7.13;
+      const angle = pseudoRandom(seed) * Math.PI * 2;
+      const distance = excludeRadius + 3 + pseudoRandom(seed + 1) * (TERRAIN_RADIUS * 0.55);
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+      items.push({
+        x,
+        z,
+        scale: 0.7 + pseudoRandom(seed + 2) * 1.1,
+        rotation: pseudoRandom(seed + 3) * Math.PI * 2,
+      });
+    }
+    return items;
+  }, [excludeRadius]);
+
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useEffect(() => {
+    if (!foliageRef.current || !trunkRef.current) return;
+    trees.forEach((tree, i) => {
+      dummy.position.set(tree.x, 1.1 * tree.scale - 0.4, tree.z);
+      dummy.rotation.set(0, tree.rotation, 0);
+      dummy.scale.setScalar(tree.scale);
+      dummy.updateMatrix();
+      foliageRef.current!.setMatrixAt(i, dummy.matrix);
+
+      dummy.position.set(tree.x, 0.35 * tree.scale - 0.4, tree.z);
+      dummy.updateMatrix();
+      trunkRef.current!.setMatrixAt(i, dummy.matrix);
+    });
+    foliageRef.current.instanceMatrix.needsUpdate = true;
+    trunkRef.current.instanceMatrix.needsUpdate = true;
+  }, [trees, dummy]);
+
+  return (
+    <group>
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, count]}>
+        <cylinderGeometry args={[0.06, 0.09, 0.7, 5]} />
+        <meshStandardMaterial color="#2a2118" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={foliageRef} args={[undefined, undefined, count]}>
+        <coneGeometry args={[0.55, 1.5, 6]} />
+        <meshStandardMaterial color="#123524" emissive="#0d5c3a" emissiveIntensity={0.15} roughness={0.9} />
+      </instancedMesh>
+    </group>
   );
 }
 
@@ -134,13 +317,40 @@ function GridFloor() {
   }, []);
 
   return (
+    <lineSegments geometry={geometry} position={[0, 0.01, 0]}>
+      <lineBasicMaterial color="#2a7ea8" transparent opacity={0.4} />
+    </lineSegments>
+  );
+}
+
+function HexPlatformBase({
+  glowColor,
+  emissiveIntensity,
+  dashed,
+}: {
+  glowColor: string;
+  emissiveIntensity: number;
+  dashed?: boolean;
+}) {
+  return (
     <group>
-      <lineSegments geometry={geometry}>
-        <lineBasicMaterial color="#2a7ea8" transparent opacity={0.35} />
-      </lineSegments>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <planeGeometry args={[GRID_SIZE, GRID_SIZE]} />
-        <meshBasicMaterial color="#05070a" transparent opacity={0.96} />
+      <mesh position={[0, PLATFORM_HEIGHT / 2, 0]} rotation={[0, Math.PI / 6, 0]}>
+        <cylinderGeometry args={[PLATFORM_RADIUS, PLATFORM_RADIUS * 1.04, PLATFORM_HEIGHT, 6]} />
+        <meshStandardMaterial
+          color="#0d1620"
+          emissive="#0f3a52"
+          emissiveIntensity={emissiveIntensity}
+          roughness={0.5}
+          metalness={0.3}
+        />
+      </mesh>
+      <mesh position={[0, PLATFORM_HEIGHT + 0.01, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 6]}>
+        {dashed ? (
+          <ringGeometry args={[PLATFORM_RADIUS - 0.12, PLATFORM_RADIUS, 6, 1, 0, Math.PI * 1.7]} />
+        ) : (
+          <ringGeometry args={[PLATFORM_RADIUS - 0.12, PLATFORM_RADIUS, 6]} />
+        )}
+        <meshBasicMaterial color={glowColor} transparent opacity={0.85} />
       </mesh>
     </group>
   );
@@ -163,7 +373,7 @@ function ProjectPlatform({
   const sessionSlots = useMemo(() => {
     const count = group.sessions.length;
     if (count === 0) return [];
-    const slotRadius = Math.min(2.2, 1.1 + count * 0.15);
+    const slotRadius = Math.min(PLATFORM_RADIUS - 0.6, 1.1 + count * 0.15);
     return group.sessions.map((session, i) => ({
       session,
       angle: (i / count) * Math.PI * 2,
@@ -173,17 +383,10 @@ function ProjectPlatform({
 
   return (
     <group position={[x, 0, z]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[3, 48]} />
-        <meshStandardMaterial color="#0d1620" emissive="#0f3a52" emissiveIntensity={0.6} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[2.9, 3, 64]} />
-        <meshBasicMaterial color="#5ad8ff" transparent opacity={0.8} />
-      </mesh>
+      <HexPlatformBase glowColor="#5ad8ff" emissiveIntensity={0.6} />
 
       <Text
-        position={[0, 2.6, 0]}
+        position={[0, PLATFORM_HEIGHT + 2.6, 0]}
         fontSize={0.42}
         color="#eaf6ff"
         anchorX="center"
@@ -195,7 +398,7 @@ function ProjectPlatform({
       </Text>
 
       {sessionSlots.length === 0 ? (
-        <Html position={[0, 0.6, 0]} center distanceFactor={14} occlude>
+        <Html position={[0, PLATFORM_HEIGHT + 0.6, 0]} center distanceFactor={14} occlude>
           <p className="world-scene-empty-note">No sessions yet</p>
         </Html>
       ) : (
@@ -237,6 +440,7 @@ function SessionMarker({
   const color = online ? session.color.dark : "#3a4a55";
   const dockX = Math.cos(angle) * radius;
   const dockZ = Math.sin(angle) * radius;
+  const baseY = PLATFORM_HEIGHT;
 
   useFrame(({ clock }) => {
     if (!orbitRef.current || !spinRef.current) return;
@@ -248,14 +452,14 @@ function SessionMarker({
       const liveAngle = angle + t * ORBIT_SPEED;
       orbitRef.current.position.x = Math.cos(liveAngle) * radius;
       orbitRef.current.position.z = Math.sin(liveAngle) * radius;
-      orbitRef.current.position.y = 0.55 + Math.sin(t * 2 + angle) * 0.12;
+      orbitRef.current.position.y = baseY + 0.55 + Math.sin(t * 2 + angle) * 0.12;
       spinRef.current.rotation.y = t * 0.8;
     } else {
       // Parked back at its fixed dock slot -- the ring below marks the same
       // spot, so this reads as "returned to the dock," not "vanished."
       orbitRef.current.position.x = dockX;
       orbitRef.current.position.z = dockZ;
-      orbitRef.current.position.y = 0.4;
+      orbitRef.current.position.y = baseY + 0.4;
       spinRef.current.rotation.y = 0;
     }
   });
@@ -268,15 +472,15 @@ function SessionMarker({
 
   return (
     <group>
-      {/* Docking-bay ring, fixed at this session's home slot -- the
-          "charging station" it's parked in while offline, and the spot it
-          departs from/returns to while orbiting online. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[dockX, 0.015, dockZ]}>
+      {/* Docking-bay ring, fixed at this session's home slot on top of the
+          platform -- the "charging station" it's parked in while offline,
+          and the spot it departs from/returns to while orbiting online. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[dockX, baseY + 0.015, dockZ]}>
         <ringGeometry args={[0.34, 0.42, 24]} />
         <meshBasicMaterial color={online ? color : "#1c2a33"} transparent opacity={0.9} />
       </mesh>
 
-      <group ref={orbitRef} position={[dockX, 0.4, dockZ]}>
+      <group ref={orbitRef} position={[dockX, baseY + 0.4, dockZ]}>
         <group ref={spinRef}>
           <mesh>
             <octahedronGeometry args={[0.32, 0]} />
@@ -330,21 +534,14 @@ function AddPlatform({ position, onClick }: { position: [number, number]; onClic
         document.body.style.cursor = "auto";
       }}
     >
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[2.3, 48]} />
-        <meshBasicMaterial color="#05070a" transparent opacity={0.4} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[2.15, 2.3, 48, 1, 0, Math.PI * 1.7]} />
-        <meshBasicMaterial
-          color={hovered ? "#eaf6ff" : "#5ad8ff"}
-          transparent
-          opacity={hovered ? 1 : 0.65}
-        />
-      </mesh>
+      <HexPlatformBase
+        glowColor={hovered ? "#eaf6ff" : "#5ad8ff"}
+        emissiveIntensity={hovered ? 0.9 : 0.4}
+        dashed
+      />
 
       <Text
-        position={[0, 1.1, 0]}
+        position={[0, PLATFORM_HEIGHT + 1.1, 0]}
         fontSize={1.1}
         color={hovered ? "#eaf6ff" : "#5ad8ff"}
         anchorX="center"
@@ -353,7 +550,7 @@ function AddPlatform({ position, onClick }: { position: [number, number]; onClic
         +
       </Text>
       <Text
-        position={[0, 0.15, 0]}
+        position={[0, PLATFORM_HEIGHT + 0.15, 0]}
         fontSize={0.32}
         color={hovered ? "#eaf6ff" : "#8fb9c9"}
         anchorX="center"
