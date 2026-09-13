@@ -1,11 +1,17 @@
 "use client";
 
 /**
- * Worldview itself: a Tron-style 3D grid (world-scene.tsx), not a page of
- * sections -- one glowing platform per project, agent sessions as markers
- * on it, plus one permanent "+" platform for connecting a new project/agent.
- * Everything else (pairing a real agent, registering one by hand) lives
- * behind that "+", in a modal, rather than always on screen.
+ * Worldview itself: a 3D world (world-scene.tsx) with one glowing platform
+ * per real Forge project -- Worldview never creates or manages projects
+ * itself, so every project a workspace already has just shows up as its
+ * own island (docs/BRIDGE.md "Projects are not managed here"). Clicking a
+ * project island opens its side panel (project-panel.tsx): project name,
+ * linked resources, linked agent sessions, and the only place "Link agent
+ * session" lives.
+ *
+ * The old "+" platform for connecting a project/agent by hand still exists
+ * in world-scene.tsx (`SHOW_ADD_PLATFORM`) and its modal below, but is not
+ * rendered -- kept rather than deleted, not reachable from the UI.
  *
  * This component owns the forge-gateway WebSocket connection and the
  * project/session grouping; the actual 3D rendering is dynamically
@@ -21,6 +27,7 @@ import { CloseIcon } from "@/components/ui/icons";
 import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
 import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
 import { LocalBridgePanel } from "@/components/agent-sessions/local-bridge-panel";
+import { ProjectPanel } from "@/components/agent-sessions/project-panel";
 import type { PresenceEntry, WorldGroup } from "@/components/agent-sessions/world-scene";
 
 const WorldScene = dynamic(
@@ -58,6 +65,7 @@ export function WorldCanvas({
 }) {
   const [presence, setPresence] = useState<Map<string, PresenceEntry>>(new Map());
   const [addOpen, setAddOpen] = useState(false);
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const stopped = useRef(false);
 
   useEffect(() => {
@@ -130,10 +138,15 @@ export function WorldCanvas({
         viewerId={viewerId}
         viewerWorkspaceId={viewerWorkspaceId}
         onAddClick={() => setAddOpen(true)}
+        onProjectClick={(projectId) => setOpenProjectId(projectId)}
       />
 
       {addOpen ? (
         <AddAgentModal projects={projects} gatewayUrl={gatewayUrl} onClose={() => setAddOpen(false)} />
+      ) : null}
+
+      {openProjectId ? (
+        <ProjectPanel projectId={openProjectId} presence={presence} onClose={() => setOpenProjectId(null)} />
       ) : null}
     </div>
   );

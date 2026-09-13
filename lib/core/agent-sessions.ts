@@ -123,6 +123,65 @@ export async function registerGatewaySession(
 }
 
 /**
+ * Explicit linking (docs/BRIDGE.md): a signed-in user selects a discovered
+ * local session and attaches it to one of their projects, from the
+ * project panel -- not through the gateway/pairing-token callback at all.
+ * This is what makes "linked" independent of "currently online": the row
+ * this writes is the same kind registerGatewaySession creates, just
+ * written directly by an authenticated action instead of waiting for a
+ * live hook event to arrive first. A session can be linked and offline
+ * for as long as nobody unlinks it.
+ *
+ * sessionRef is derived the identical way forge-gateway does for a
+ * bridge-sourced event (`sr_<provider>_<providerSessionId>`) so that if
+ * this same session ever DOES report live presence, it resolves to the
+ * exact row this created rather than a duplicate.
+ *
+ * onConflictDoUpdate, not onConflictDoNothing: re-linking a session that
+ * already has a row (e.g. it reported presence before anyone linked it,
+ * or it's being moved to a different project) should actually move it,
+ * not silently no-op.
+ */
+export async function linkAgentSession(
+  workspaceId: string,
+  ownerId: string,
+  projectId: string,
+  input: {
+    provider: AgentSessionRow["provider"];
+    providerSessionId: string;
+    workingDirectory?: string | null;
+    label?: string | null;
+  },
+): Promise<AgentSessionRow> {
+  const sessionRef = `sr_${input.provider}_${input.providerSessionId}`;
+  const [row] = await db
+    .insert(agentSessions)
+    .values({
+      workspaceId,
+      ownerId,
+      projectId,
+      provider: input.provider,
+      label: input.label || null,
+      sessionRef,
+      providerSessionId: input.providerSessionId,
+      workingDirectory: input.workingDirectory || null,
+      status: "active",
+    })
+    .onConflictDoUpdate({
+      target: agentSessions.sessionRef,
+      set: {
+        projectId,
+        status: "active",
+        workingDirectory: input.workingDirectory || null,
+        lastRegisteredAt: new Date(),
+      },
+    })
+    .returning();
+  if (!row) throw new Error("Failed to link the agent session");
+  return row;
+}
+
+/**
  * Flips a registration to revoked. The row stays — see docs/WORLDVIEW.md §8.
  *
  * Two ways to be allowed to: the workspace it lives in is yours (revoking
