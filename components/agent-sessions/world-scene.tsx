@@ -44,9 +44,9 @@ export interface PresenceEntry {
 const GRID_SIZE = 140;
 const GRID_DIVISIONS = 56;
 const TERRAIN_RADIUS = 110;
-/** Circumradius of one hex platform, and the hex-grid cell size -- equal so
- * platforms tile edge-to-edge ("fit the grid") rather than floating free on
- * a ring. */
+/** The hex-grid cell size ("fit the grid" rather than floating free on a
+ * ring) -- platform circumradius is a hair smaller than this so adjacent
+ * platforms sit close with a small visible gap, instead of touching. */
 const HEX_SIZE = 3.8;
 const PLATFORM_RADIUS = HEX_SIZE - 0.35;
 const PLATFORM_HEIGHT = 0.7;
@@ -250,10 +250,8 @@ function Trees({ excludeRadius }: { excludeRadius: number }) {
 
   const trees = useMemo(() => {
     const items: { x: number; z: number; scale: number; rotation: number }[] = [];
-    let attempts = 0;
-    while (items.length < count && attempts < count * 6) {
-      attempts += 1;
-      const seed = attempts * 7.13;
+    for (let i = 0; i < count; i += 1) {
+      const seed = i * 7.13;
       const angle = pseudoRandom(seed) * Math.PI * 2;
       const distance = excludeRadius + 3 + pseudoRandom(seed + 1) * (TERRAIN_RADIUS * 0.55);
       const x = Math.cos(angle) * distance;
