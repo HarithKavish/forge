@@ -1,0 +1,24 @@
+{
+  "name": "forge-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local companion process: discovers this machine's Claude Code sessions via the Agent SDK, relays live hook events, and lets Forge's browser UI read history and resume a session directly from localhost. Never runs on Vercel/Cloudflare -- this is the one piece of Forge's Claude Code integration that has to live on the user's own machine, because the Agent SDK's resume/discovery APIs only work against the local filesystem.",
+  "type": "module",
+  "scripts": {
+    "bridge": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "install-hooks": "tsx src/hooks/installer.ts install",
+    "uninstall-hooks": "tsx src/hooks/installer.ts uninstall",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.270",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.2"
+  }
+}

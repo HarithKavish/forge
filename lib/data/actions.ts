@@ -282,6 +282,31 @@ export async function mintPairingTokenAction(
   return { token };
 }
 
+/**
+ * Same mint as mintPairingTokenAction, callable directly from client code
+ * instead of through a form submission -- used once, automatically, when
+ * the browser follows the Forge Local Bridge's one-time connect link
+ * (components/agent-sessions/local-bridge-panel.tsx), rather than making
+ * the user fill out the "provider/project/label" form for what is, for the
+ * bridge, always `provider: "claude"` and no fixed project (a bridge
+ * speaks for every session on the machine, not one project).
+ */
+export async function mintBridgePairingTokenAction(): Promise<{ token: string } | { error: string }> {
+  const session = await requireSession();
+  try {
+    const token = mintPairingToken({
+      workspaceId: session.workspaceId,
+      ownerId: session.userId,
+      provider: "claude",
+      projectId: null,
+      label: "Local Forge Bridge",
+    });
+    return { token };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not mint a pairing token." };
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Integrations                                                                */
 /* -------------------------------------------------------------------------- */
