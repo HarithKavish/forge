@@ -1,34 +1,31 @@
 "use client";
 
 /**
- * Worldview itself: not a page of sections, but a canvas of "islands" -- one
- * per project, holding that project's agent-session avatar tokens, plus one
- * permanent empty island with a "+" for connecting a new project/agent.
+ * Worldview itself: a Tron-style 3D grid (world-scene.tsx), not a page of
+ * sections -- one glowing platform per project, agent sessions as markers
+ * on it, plus one permanent "+" platform for connecting a new project/agent.
  * Everything else (pairing a real agent, registering one by hand) lives
  * behind that "+", in a modal, rather than always on screen.
  *
- * Owns the same forge-gateway WebSocket connection session-list.tsx used to
- * own -- moved here since this is now the thing rendering presence.
+ * This component owns the forge-gateway WebSocket connection and the
+ * project/session grouping; the actual 3D rendering is dynamically
+ * imported with ssr:false since three.js touches `window`/`self` at module
+ * load and cannot run during server rendering.
  */
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 
-import { revokeAgentSessionAction } from "@/lib/data/actions";
-import { agentProviderLabel, relativeTime } from "@/lib/format";
-import { personColorStyle } from "@/lib/color";
 import type { DisplaySession, SelectableProject } from "@/lib/data/types";
-import { PlusIcon, CloseIcon } from "@/components/ui/icons";
-import { ProviderIcon } from "@/components/agent-sessions/provider-icon";
+import { CloseIcon } from "@/components/ui/icons";
 import { PairSessionForm } from "@/components/agent-sessions/pair-session-form";
 import { RegisterSessionForm } from "@/components/agent-sessions/register-session-form";
+import type { PresenceEntry, WorldGroup } from "@/components/agent-sessions/world-scene";
 
-type PresenceState = "online" | "offline";
-interface PresenceEntry {
-  sessionRef: string;
-  state: PresenceState;
-  activity?: string;
-  lastEventAt: number;
-}
+const WorldScene = dynamic(
+  () => import("@/components/agent-sessions/world-scene").then((m) => m.WorldScene),
+  { ssr: false, loading: () => <div className="world-scene-loading">Loading the world…</div> },
+);
 
 const RECONNECT_DELAY_MS = 4_000;
 /** Reconnect before the 10-minute viewer token actually expires. */
@@ -126,32 +123,13 @@ export function WorldCanvas({
 
   return (
     <div className="world-canvas">
-      <div className="world-islands">
-        {groups.map((group) => (
-          <Island key={group.projectId ?? "unassigned"} name={group.projectName}>
-            {group.sessions.map((session) => (
-              <AvatarToken
-                key={session.id}
-                session={session}
-                live={presence.get(session.sessionRef)}
-                canRevoke={session.ownerId === viewerId || session.workspaceId === viewerWorkspaceId}
-              />
-            ))}
-          </Island>
-        ))}
-
-        <button
-          type="button"
-          className="world-island world-island--empty"
-          onClick={() => setAddOpen(true)}
-          aria-haspopup="dialog"
-        >
-          <span className="world-island-plus">
-            <PlusIcon size={22} />
-          </span>
-          <span className="world-island-add-label">Add a project</span>
-        </button>
-      </div>
+      <WorldScene
+        groups={groups}
+        presence={presence}
+        viewerId={viewerId}
+        viewerWorkspaceId={viewerWorkspaceId}
+        onAddClick={() => setAddOpen(true)}
+      />
 
       {addOpen ? (
         <AddAgentModal projects={projects} gatewayUrl={gatewayUrl} onClose={() => setAddOpen(false)} />
@@ -233,24 +211,7 @@ function AddAgentModal({
   );
 }
 
-function Island({ name, children }: { name: string; children: React.ReactNode }) {
-  const hasSessions = Array.isArray(children) ? children.length > 0 : Boolean(children);
-  return (
-    <div className="world-island">
-      <p className="world-island-name">{name}</p>
-      {hasSessions ? (
-        <div className="world-island-tokens">{children}</div>
-      ) : (
-        <p className="world-island-empty-note">No sessions yet</p>
-      )}
-    </div>
-  );
-}
-
-function groupByProject(
-  sessions: DisplaySession[],
-  projects: SelectableProject[],
-): { projectId?: string; projectName: string; sessions: DisplaySession[] }[] {
+function groupByProject(sessions: DisplaySession[], projects: SelectableProject[]): WorldGroup[] {
   const byId = new Map<string, DisplaySession[]>();
   const unassigned: DisplaySession[] = [];
 
@@ -264,15 +225,13 @@ function groupByProject(
     byId.set(session.projectId, bucket);
   }
 
-  const groups: { projectId?: string; projectName: string; sessions: DisplaySession[] }[] = [
-    ...byId.entries(),
-  ].map(([projectId, group]) => ({
+  const groups: WorldGroup[] = [...byId.entries()].map(([projectId, group]) => ({
     projectId,
     projectName: projects.find((p) => p.id === projectId)?.name ?? "Unknown project",
     sessions: group,
   }));
 
-  // Every project shows as an island even with zero sessions registered to
+  // Every project shows as a platform even with zero sessions registered to
   // it yet -- otherwise a freshly created project never appears until
   // someone pairs an agent to it, which is backwards for "the world shows
   // what exists."
@@ -287,57 +246,4 @@ function groupByProject(
   }
 
   return groups;
-}
-
-function AvatarToken({
-  session,
-  live,
-  canRevoke,
-}: {
-  session: DisplaySession;
-  live?: PresenceEntry;
-  canRevoke: boolean;
-}) {
-  const online = live?.state === "online";
-  const docked = live?.state === "offline";
-  const displayName = session.label || agentProviderLabel(session.provider);
-  const initial = displayName.slice(0, 1).toUpperCase();
-
-  let statusText: string;
-  let caption: string;
-  if (online) {
-    statusText = live?.activity ?? "Online";
-    caption = "Online";
-  } else if (docked) {
-    statusText = "Docked -- offline";
-    caption = "Docked";
-  } else {
-    statusText = "Registered -- never connected";
-    caption = relativeTime(session.createdAt);
-  }
-
-  return (
-    <div className="flex w-20 flex-col items-center gap-1.5 text-center">
-      <div
-        className={`worldview-avatar person-color-bg ${online ? "worldview-avatar--online" : "worldview-avatar--offline"}`}
-        style={personColorStyle(session.color)}
-        title={`${displayName} · ${statusText}`}
-      >
-        {initial}
-        <span className="worldview-avatar-badge" aria-hidden="true">
-          <ProviderIcon provider={session.provider} size={13} />
-        </span>
-      </div>
-      <p className="w-full truncate text-[0.78rem] font-medium">{displayName}</p>
-      <p className="w-full truncate text-[0.7rem] text-muted">{caption}</p>
-      {canRevoke ? (
-        <form action={revokeAgentSessionAction}>
-          <input type="hidden" name="sessionId" value={session.id} />
-          <button type="submit" className="text-[0.7rem] text-faint hover:text-error hover:underline">
-            Revoke
-          </button>
-        </form>
-      ) : null}
-    </div>
-  );
 }
