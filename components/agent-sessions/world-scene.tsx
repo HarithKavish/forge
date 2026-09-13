@@ -41,16 +41,22 @@ export interface PresenceEntry {
 
 const GRID_SIZE = 80;
 const GRID_DIVISIONS = 40;
-const RING_RADIUS = 9;
+/** Platform footprint is a radius-3 circle (diameter 6) -- the ring radius
+ * has to grow with the platform count or they start overlapping past
+ * roughly nine of them (a ring this size only has ~56.5 units of
+ * circumference to share). */
+const PLATFORM_DIAMETER = 6.4;
 
 function layoutPositions(count: number): [number, number][] {
   // Platforms on a ring around the origin, evenly spaced, so the scene
   // reads sensibly whether there's 1 project or a dozen.
   if (count <= 1) return [[0, 0]];
+  const minRadius = 9;
+  const radius = Math.max(minRadius, (count * PLATFORM_DIAMETER) / (Math.PI * 2));
   const positions: [number, number][] = [];
   for (let i = 0; i < count; i += 1) {
     const angle = (i / count) * Math.PI * 2;
-    positions.push([Math.cos(angle) * RING_RADIUS, Math.sin(angle) * RING_RADIUS]);
+    positions.push([Math.cos(angle) * radius, Math.sin(angle) * radius]);
   }
   return positions;
 }
@@ -158,10 +164,11 @@ function ProjectPlatform({
     const count = group.sessions.length;
     if (count === 0) return [];
     const slotRadius = Math.min(2.2, 1.1 + count * 0.15);
-    return group.sessions.map((session, i) => {
-      const angle = (i / count) * Math.PI * 2;
-      return { session, x: Math.cos(angle) * slotRadius, z: Math.sin(angle) * slotRadius };
-    });
+    return group.sessions.map((session, i) => ({
+      session,
+      angle: (i / count) * Math.PI * 2,
+      radius: slotRadius,
+    }));
   }, [group.sessions]);
 
   return (
@@ -192,11 +199,12 @@ function ProjectPlatform({
           <p className="world-scene-empty-note">No sessions yet</p>
         </Html>
       ) : (
-        sessionSlots.map(({ session, x: sx, z: sz }) => (
+        sessionSlots.map(({ session, angle, radius }) => (
           <SessionMarker
             key={session.id}
             session={session}
-            position={[sx, 0, sz]}
+            angle={angle}
+            radius={radius}
             live={presence.get(session.sessionRef)}
             canRevoke={session.ownerId === viewerId || session.workspaceId === viewerWorkspaceId}
           />
@@ -206,30 +214,49 @@ function ProjectPlatform({
   );
 }
 
+/** Radians/second an online session's marker orbits its platform center at. */
+const ORBIT_SPEED = 0.5;
+
 function SessionMarker({
   session,
-  position,
+  angle,
+  radius,
   live,
   canRevoke,
 }: {
   session: DisplaySession;
-  position: [number, number, number];
+  angle: number;
+  radius: number;
   live?: PresenceEntry;
   canRevoke: boolean;
 }) {
   const online = live?.state === "online";
   const docked = live?.state === "offline";
-  const groupRef = useRef<THREE.Group>(null);
+  const orbitRef = useRef<THREE.Group>(null);
+  const spinRef = useRef<THREE.Group>(null);
   const color = online ? session.color.dark : "#3a4a55";
+  const dockX = Math.cos(angle) * radius;
+  const dockZ = Math.sin(angle) * radius;
 
   useFrame(({ clock }) => {
-    if (!groupRef.current) return;
+    if (!orbitRef.current || !spinRef.current) return;
+    const t = clock.getElapsedTime();
     if (online) {
-      const t = clock.getElapsedTime();
-      groupRef.current.position.y = 0.55 + Math.sin(t * 2 + position[0]) * 0.12;
-      groupRef.current.rotation.y = t * 0.8;
+      // Actually orbits the platform center at its own radius/speed, rather
+      // than just bobbing in place -- a session that's working should look
+      // like it's doing laps, not idling.
+      const liveAngle = angle + t * ORBIT_SPEED;
+      orbitRef.current.position.x = Math.cos(liveAngle) * radius;
+      orbitRef.current.position.z = Math.sin(liveAngle) * radius;
+      orbitRef.current.position.y = 0.55 + Math.sin(t * 2 + angle) * 0.12;
+      spinRef.current.rotation.y = t * 0.8;
     } else {
-      groupRef.current.position.y = 0.4;
+      // Parked back at its fixed dock slot -- the ring below marks the same
+      // spot, so this reads as "returned to the dock," not "vanished."
+      orbitRef.current.position.x = dockX;
+      orbitRef.current.position.z = dockZ;
+      orbitRef.current.position.y = 0.4;
+      spinRef.current.rotation.y = 0;
     }
   });
 
@@ -240,41 +267,44 @@ function SessionMarker({
   else statusText = `Registered · ${relativeTime(session.createdAt)}`;
 
   return (
-    <group position={position}>
-      {/* Docking-bay ring on the platform, always visible under the marker
-          -- this is the "charging station" an offline session sits in. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+    <group>
+      {/* Docking-bay ring, fixed at this session's home slot -- the
+          "charging station" it's parked in while offline, and the spot it
+          departs from/returns to while orbiting online. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[dockX, 0.015, dockZ]}>
         <ringGeometry args={[0.34, 0.42, 24]} />
         <meshBasicMaterial color={online ? color : "#1c2a33"} transparent opacity={0.9} />
       </mesh>
 
-      <group ref={groupRef} position={[0, 0.4, 0]}>
-        <mesh>
-          <octahedronGeometry args={[0.32, 0]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={online ? 2.2 : 0.25}
-            roughness={0.3}
-            metalness={0.4}
-          />
-        </mesh>
-      </group>
+      <group ref={orbitRef} position={[dockX, 0.4, dockZ]}>
+        <group ref={spinRef}>
+          <mesh>
+            <octahedronGeometry args={[0.32, 0]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={color}
+              emissiveIntensity={online ? 2.2 : 0.25}
+              roughness={0.3}
+              metalness={0.4}
+            />
+          </mesh>
+        </group>
 
-      <Html position={[0, 1.15, 0]} center distanceFactor={11} occlude>
-        <div className="world-scene-card">
-          <p className="world-scene-card-name">{displayName}</p>
-          <p className="world-scene-card-status">{statusText}</p>
-          {canRevoke ? (
-            <form action={revokeAgentSessionAction}>
-              <input type="hidden" name="sessionId" value={session.id} />
-              <button type="submit" className="world-scene-card-revoke">
-                Revoke
-              </button>
-            </form>
-          ) : null}
-        </div>
-      </Html>
+        <Html position={[0, 0.75, 0]} center distanceFactor={11} occlude>
+          <div className="world-scene-card">
+            <p className="world-scene-card-name">{displayName}</p>
+            <p className="world-scene-card-status">{statusText}</p>
+            {canRevoke ? (
+              <form action={revokeAgentSessionAction}>
+                <input type="hidden" name="sessionId" value={session.id} />
+                <button type="submit" className="world-scene-card-revoke">
+                  Revoke
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </Html>
+      </group>
     </group>
   );
 }

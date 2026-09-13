@@ -394,66 +394,6 @@ textarea:focus-visible,
     }
   }
 
-  /* --- Worldview avatar tokens -------------------------------------------
-     Online: a soft repeating pulse -- "doing something". Offline: grayscale
-     + dimmed -- "docked". Reduced motion gets a static ring instead of the
-     animation, never nothing (the state must still read). */
-  .worldview-avatar {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 999px;
-    color: #fff;
-    font-weight: 650;
-    font-size: 0.85rem;
-    transition: filter 200ms ease, opacity 200ms ease;
-  }
-
-  .worldview-avatar--offline {
-    filter: grayscale(0.85);
-    opacity: 0.55;
-  }
-
-  .worldview-avatar--online {
-    animation: worldview-pulse 2.4s ease-out infinite;
-  }
-
-  @keyframes worldview-pulse {
-    0% {
-      box-shadow: 0 0 0 0 var(--status-healthy-border);
-    }
-    70% {
-      box-shadow: 0 0 0 9px rgba(0, 0, 0, 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .worldview-avatar--online {
-      animation: none;
-      box-shadow: 0 0 0 3px var(--status-healthy-border);
-    }
-  }
-
-  .worldview-avatar-badge {
-    position: absolute;
-    top: -0.3rem;
-    right: -0.3rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.35rem;
-    height: 1.35rem;
-    border-radius: 999px;
-    background: var(--surface);
-    box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--border);
-    color: var(--text);
-  }
 
   /* --- Worldview: the world itself ---------------------------------------
      Not a page of stacked sections -- a 3D Tron-style grid (world-scene.tsx,
