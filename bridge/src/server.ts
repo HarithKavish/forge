@@ -13,10 +13,16 @@ import { loadState, saveState } from "./state.js";
  * The bridge's local API. Two very different trust levels share one
  * process, kept structurally separate:
  *
- * - Browser -> bridge (this file's HTTP/WS routes below `requireBridgeAuth`):
- *   gated on `bridgeToken`, a secret generated once on this machine and
- *   handed to the browser exactly once via a one-time link (never sent to
- *   Forge's remote side). CORS is restricted to Forge's own origins so a
+ * - Browser -> bridge, before any credential exists (`/discover`, `/link`):
+ *   gated on the request's Origin header instead of a token -- the whole
+ *   point is automatic discovery with nothing to copy/paste (docs/BRIDGE.md
+ *   "Local bridge discovery"). Worldview's page JS just fetches a fixed
+ *   local port on load; if a bridge answers and isn't linked yet, one more
+ *   fetch (with a token Forge's server minted) links it and gets back
+ *   `bridgeToken` for everything after.
+ * - Browser -> bridge, once linked (every other route, `requireBridgeAuth`):
+ *   gated on that `bridgeToken`, a secret generated once on this machine.
+ *   CORS is restricted to Forge's own origins on top of that, so a
  *   response body can't be read cross-origin even if some other open tab
  *   fires a blind request.
  * - Claude Code hook -> bridge (`/hooks/claude`): same bridgeToken, baked
@@ -67,6 +73,26 @@ function requireBridgeAuth(req: IncomingMessage, res: ServerResponse): boolean {
   return true;
 }
 
+/**
+ * For the two routes a browser calls *before* it has a bridgeToken at all
+ * (/discover, /link) -- the Origin header is the only defense available at
+ * that point, and it's a real one: a page's JS cannot forge or omit this
+ * header (the browser sets it, unconditionally, on every cross-origin
+ * fetch), so a script running on some other site can trigger a request but
+ * can neither spoof this check nor read the response past it (CORS still
+ * blocks that separately). This is why auto-discovery -- fetch a fixed
+ * local port with no manual token -- doesn't hand every open tab a way to
+ * read Claude Code session history.
+ */
+function requireBrowserOrigin(req: IncomingMessage, res: ServerResponse): boolean {
+  const origin = req.headers.origin;
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    sendJson(res, 403, { error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCors(req, res);
   if (req.method === "OPTIONS") {
@@ -88,8 +114,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/pair") {
-      if (!requireBridgeAuth(req, res)) return;
+    // No bridgeToken required for either of these two -- that's the whole
+    // point (docs/BRIDGE.md "Local bridge discovery"): the browser finds
+    // and links a bridge on its own, with nothing to copy/paste. Origin
+    // validation is the gate here instead (see requireBrowserOrigin).
+    if (req.method === "GET" && url.pathname === "/discover") {
+      if (!requireBrowserOrigin(req, res)) return;
+      const state = loadState();
+      sendJson(res, 200, { connected: true, linked: Boolean(state.pairingToken) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/link") {
+      if (!requireBrowserOrigin(req, res)) return;
       const { pairingToken } = JSON.parse(await readBody(req)) as { pairingToken?: string };
       if (!pairingToken) return sendJson(res, 400, { error: "pairingToken required" });
       const claims = readPairingClaims(pairingToken);
@@ -100,7 +137,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       state.linkedWorkspaceId = claims.workspaceId;
       state.linkedProjectId = claims.projectId;
       saveState(state);
-      sendJson(res, 200, { linkedWorkspaceId: claims.workspaceId, linkedProjectId: claims.projectId });
+      // Returned here, not printed to a terminal or embedded in a URL --
+      // this is the one moment the browser learns it, straight from an
+      // Origin-validated response to a request it made itself.
+      sendJson(res, 200, {
+        bridgeToken: state.bridgeToken,
+        linkedWorkspaceId: claims.workspaceId,
+        linkedProjectId: claims.projectId,
+      });
       return;
     }
 

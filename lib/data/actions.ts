@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import {
   createAgentSession,
+  linkAgentSession,
   revokeAgentSession,
 } from "@/lib/core/agent-sessions";
 import {
@@ -37,6 +38,8 @@ import {
   setResourcePresence,
 } from "@/lib/core/resources";
 import { runDiscovery } from "@/lib/sync/discover";
+import { listAgentSessionsForProjects, listResources } from "@/lib/data/queries";
+import type { AgentProvider, AgentSession, Resource } from "@/lib/data/types";
 
 export interface ProjectFormState {
   error?: string;
@@ -219,6 +222,89 @@ export async function revokeAgentSessionAction(formData: FormData): Promise<void
   await revokeAgentSession(session.workspaceId, session.userId, sessionId);
   revalidatePath("/worldview");
   redirect("/worldview");
+}
+
+/**
+ * Same as revokeAgentSessionAction's underlying effect, but a plain
+ * callable that returns instead of redirecting -- the project panel stays
+ * open and just re-fetches its own data, rather than the whole-page
+ * form-submit flow the /worldview page's own revoke link uses.
+ */
+export async function unlinkAgentSessionAction(
+  sessionId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireSession();
+  if (!sessionId) return { error: "sessionId required" };
+  await revokeAgentSession(session.workspaceId, session.userId, sessionId);
+  revalidatePath("/worldview");
+  return { ok: true };
+}
+
+export interface ProjectPanelData {
+  project: { id: string; name: string };
+  resources: Resource[];
+  agentSessions: AgentSession[];
+}
+
+/**
+ * Everything the project panel (docs/BRIDGE.md) needs on open: the
+ * project's own linked resources (already-established pattern) and its
+ * linked agent sessions -- "linked" meaning an agent_sessions row exists
+ * with this projectId, independent of whether that session is currently
+ * online (lib/core/agent-sessions.ts linkAgentSession's whole point).
+ */
+export async function getProjectPanelDataAction(
+  projectId: string,
+): Promise<ProjectPanelData | { error: string }> {
+  const session = await requireSession();
+  const access = await resolveProjectAccess(session.userId, projectId);
+  if (!access) return { error: "That project could not be found, or you don't have access to it." };
+
+  const projectRow = await getProjectRow(access.workspaceId, projectId);
+  if (!projectRow) return { error: "That project could not be found." };
+
+  const [resources, agentSessions] = await Promise.all([
+    listResources(access.workspaceId, { projectId }),
+    listAgentSessionsForProjects([projectId]),
+  ]);
+
+  return {
+    project: { id: projectRow.id, name: projectRow.name },
+    resources,
+    agentSessions: agentSessions.filter((s) => s.status === "active"),
+  };
+}
+
+/**
+ * Links one or more sessions the browser already discovered directly from
+ * the local bridge (real providerSessionId, real cwd -- no pairing token
+ * involved at all, since this is an authenticated Forge action, not a
+ * gateway callback). docs/BRIDGE.md's clarification: linking is a Forge-DB
+ * write the caller makes deliberately, not something that waits for a live
+ * hook event to arrive first.
+ */
+export async function linkAgentSessionsAction(
+  projectId: string,
+  sessions: { provider: AgentProvider; providerSessionId: string; workingDirectory?: string; label?: string }[],
+): Promise<{ linked: number } | { error: string }> {
+  const session = await requireSession();
+  if (sessions.length === 0) return { error: "Select at least one session." };
+  if (sessions.length > 50) return { error: "Too many sessions selected." };
+
+  const access = await resolveProjectAccess(session.userId, projectId);
+  if (!access) return { error: "That project could not be found, or you don't have access to it." };
+
+  for (const s of sessions) {
+    await linkAgentSession(access.workspaceId, session.userId, projectId, {
+      provider: s.provider,
+      providerSessionId: s.providerSessionId,
+      workingDirectory: s.workingDirectory,
+      label: s.label,
+    });
+  }
+
+  revalidatePath("/worldview");
+  return { linked: sessions.length };
 }
 
 export interface PairingFormState {

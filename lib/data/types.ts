@@ -194,6 +194,11 @@ export interface AgentSession {
   provider: AgentProvider;
   /** Opaque, safe to show -- never a credential. Correlates with a live PresenceEntry. */
   sessionRef: string;
+  /** The provider's own session id (e.g. Claude Code's session UUID) --
+   *  undefined for a manually-registered or pre-bridge row. Docs/BRIDGE.md
+   *  "Session identity fix." What the bridge actually resumes against. */
+  providerSessionId?: string;
+  workingDirectory?: string;
   label?: string;
   status: AgentSessionStatus;
   createdAt: string;

@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * The actual 3D world: a landscape with a Tron-style neon grid hovering just
+ * The actual 3D world: a landscape with a subtle white grid hovering just
  * above it, distant mountains and scattered trees for depth, one raised
  * hexagonal platform per project (positioned on a real hex grid, not a
- * simple ring), agent sessions as glowing markers orbiting or docked on
- * their platform, and one dashed "+" hex platform for adding a
- * project/agent. Visual language borrowed deliberately from
- * github.com/Kvadratni/thegrid (grid floor, bloom, per-agent neon color) --
- * adapted to Worldview's actual data model (projects + sessions, not a
- * file system) rather than reproduced wholesale.
+ * simple ring), a firepit at each platform's center, and provider-colored
+ * robots representing each linked agent session -- walking while online,
+ * docked at a fixed charging pad while offline. One dashed "+" hex platform
+ * for adding a project/agent exists in code but is not rendered
+ * (docs/BRIDGE.md "Projects are not managed here") -- every real Forge
+ * project is its own island already, so there is nothing for it to do.
  *
  * Pure presentation: takes already-grouped data and callbacks, owns no
  * WebSocket or form state itself -- that stays in world-canvas.tsx, which
@@ -19,13 +19,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Html, OrbitControls, Text } from "@react-three/drei";
+import { OrbitControls, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 
-import { revokeAgentSessionAction } from "@/lib/data/actions";
-import { agentProviderLabel, relativeTime } from "@/lib/format";
-import type { DisplaySession } from "@/lib/data/types";
+import type { AgentProvider, DisplaySession } from "@/lib/data/types";
 
 export interface WorldGroup {
   projectId?: string;
@@ -50,6 +48,13 @@ const TERRAIN_RADIUS = 110;
 const HEX_SIZE = 3.8;
 const PLATFORM_RADIUS = HEX_SIZE - 0.35;
 const PLATFORM_HEIGHT = 0.7;
+
+/** Set to render the legacy "Add a project" island again. Left in place
+ * rather than deleted (docs/BRIDGE.md): Worldview no longer manages
+ * projects itself, every real Forge project is already its own island, so
+ * this control has nothing left to do -- but the code stays intact rather
+ * than being torn out. */
+const SHOW_ADD_PLATFORM = false;
 
 /** Axial hex directions, used to walk each ring of the spiral. */
 const HEX_DIRECTIONS: [number, number][] = [
@@ -110,18 +115,44 @@ function pseudoRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
+/** Stable string hash (djb2-ish) -- used to derive each linked session's
+ * dock angle from its own id rather than its position in an array, so
+ * adding/removing a *different* session on the same project never moves
+ * this one (docs/BRIDGE.md "Deterministic docking"). */
+function hashString(value: string): number {
+  let h = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    h = (h * 31 + value.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0) / 4294967295;
+}
+
+/** Provider brand colors for the robots. `AgentProvider` only enumerates
+ * claude/codex/gemini/other -- there's no `deepseek` value to key on, so a
+ * provider like DeepSeek falls into `other` today rather than getting a
+ * hardcoded (and incorrect) slot of its own. Keyed by provider, never by
+ * person, so this never needs per-user color logic. */
+const PROVIDER_COLORS: Record<AgentProvider, string> = {
+  claude: "#d97757",
+  codex: "#e8e8e8",
+  gemini: "#4c8df6",
+  other: "#8e6fd6",
+};
+
 export function WorldScene({
   groups,
   presence,
-  viewerId,
-  viewerWorkspaceId,
+  viewerId: _viewerId,
+  viewerWorkspaceId: _viewerWorkspaceId,
   onAddClick,
+  onProjectClick,
 }: {
   groups: WorldGroup[];
   presence: Map<string, PresenceEntry>;
   viewerId: string;
   viewerWorkspaceId: string;
   onAddClick: () => void;
+  onProjectClick: (projectId: string) => void;
 }) {
   const positions = useMemo(() => layoutPositions(groups.length + 1), [groups.length]);
 
@@ -151,12 +182,11 @@ export function WorldScene({
           group={group}
           position={positions[index] ?? [0, 0]}
           presence={presence}
-          viewerId={viewerId}
-          viewerWorkspaceId={viewerWorkspaceId}
+          onClick={group.projectId ? () => onProjectClick(group.projectId!) : undefined}
         />
       ))}
 
-      <AddPlatform position={positions[groups.length] ?? [0, 0]} onClick={onAddClick} />
+      {SHOW_ADD_PLATFORM ? <AddPlatform position={positions[groups.length] ?? [0, 0]} onClick={onAddClick} /> : null}
 
       <OrbitControls
         enablePan={false}
@@ -364,7 +394,7 @@ function GridFloor() {
 
   return (
     <lineSegments geometry={geometry} position={[0, 0.01, 0]}>
-      <lineBasicMaterial color="#2a7ea8" transparent opacity={0.4} />
+      <lineBasicMaterial color="#f4f8fb" transparent opacity={0.35} />
     </lineSegments>
   );
 }
@@ -383,11 +413,13 @@ function HexPlatformBase({
     // than a compound per-mesh Euler -- mixing rotation.x and rotation.z on
     // the flat ring while the cylinder used a plain rotation.y produced two
     // *different* final orientations (Euler composition order), so the
-    // glowing ring outline and the solid hex body didn't actually line up:
-    // that's what was overlapping in the screenshot, not the hex-grid math.
+    // glowing ring outline and the solid hex body didn't actually line up.
     <group rotation={[0, Math.PI / 6, 0]}>
       <mesh position={[0, PLATFORM_HEIGHT / 2, 0]}>
-        <cylinderGeometry args={[PLATFORM_RADIUS, PLATFORM_RADIUS * 1.04, PLATFORM_HEIGHT, 6]} />
+        {/* Equal top/bottom radius -- a tapered frustum here read as a
+            visible seam/overlap against a neighboring platform's own base
+            at the shared edge; a straight hexagonal prism doesn't. */}
+        <cylinderGeometry args={[PLATFORM_RADIUS, PLATFORM_RADIUS, PLATFORM_HEIGHT, 6]} />
         <meshStandardMaterial
           color="#0d1620"
           emissive="#0f3a52"
@@ -419,35 +451,102 @@ function HexPlatformBase({
   );
 }
 
+/** A firepit at the center of every project platform -- purely atmospheric,
+ * no data attached to it. Two overlapping cones scaled/rotated per-frame
+ * with offset sine waves stand in for a waving flame without a shader. */
+function Firepit() {
+  const flameRef = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (!flameRef.current) return;
+    const t = clock.getElapsedTime();
+    flameRef.current.scale.set(1 + Math.sin(t * 6) * 0.1, 1 + Math.sin(t * 5.3 + 1) * 0.18, 1 + Math.cos(t * 6.7) * 0.1);
+    flameRef.current.rotation.y = Math.sin(t * 1.3) * 0.35;
+  });
+
+  return (
+    <group position={[0, PLATFORM_HEIGHT, 0]}>
+      <mesh position={[0, 0.08, 0]}>
+        <cylinderGeometry args={[0.5, 0.62, 0.16, 10]} />
+        <meshStandardMaterial color="#463a30" roughness={1} />
+      </mesh>
+      <group ref={flameRef} position={[0, 0.28, 0]}>
+        <mesh>
+          <coneGeometry args={[0.26, 0.68, 8]} />
+          <meshStandardMaterial color="#2f8fe0" emissive="#3fa9ff" emissiveIntensity={2.6} transparent opacity={0.88} />
+        </mesh>
+        <mesh position={[0, 0.16, 0]} scale={[0.6, 0.65, 0.6]}>
+          <coneGeometry args={[0.26, 0.68, 8]} />
+          <meshStandardMaterial color="#bfe8ff" emissive="#dff3ff" emissiveIntensity={3.2} transparent opacity={0.85} />
+        </mesh>
+      </group>
+      <pointLight position={[0, 0.6, 0]} color="#3fa9ff" intensity={1.3} distance={5.5} />
+    </group>
+  );
+}
+
 function ProjectPlatform({
   group,
   position,
   presence,
-  viewerId,
-  viewerWorkspaceId,
+  onClick,
 }: {
   group: WorldGroup;
   position: [number, number];
   presence: Map<string, PresenceEntry>;
-  viewerId: string;
-  viewerWorkspaceId: string;
+  onClick?: () => void;
 }) {
   const [x, z] = position;
-  const sessionSlots = useMemo(() => {
-    const count = group.sessions.length;
-    if (count === 0) return [];
-    const slotRadius = Math.min(PLATFORM_RADIUS - 0.6, 1.1 + count * 0.15);
-    return group.sessions.map((session, i) => ({
-      session,
-      angle: (i / count) * Math.PI * 2,
-      radius: slotRadius,
-    }));
+  const [hovered, setHovered] = useState(false);
+
+  const dockSlots = useMemo(() => {
+    // One dock per *linked* session, always -- online or offline doesn't
+    // change the count (docs/BRIDGE.md "Docking positions"). The angle
+    // comes from a hash of the session's own stable id, not its index in
+    // this array, so a session's dock never moves when another session on
+    // the same project is added or removed. Radius sits near the platform's
+    // edge -- "a corner of the platform," not the middle (the firepit's).
+    const dockRadius = PLATFORM_RADIUS - 0.45;
+    return group.sessions.map((session) => {
+      const angle = hashString(session.id) * Math.PI * 2;
+      return { session, angle, dockRadius };
+    });
   }, [group.sessions]);
 
   return (
-    <group position={[x, 0, z]}>
-      <HexPlatformBase glowColor="#5ad8ff" emissiveIntensity={0.6} />
+    <group
+      position={[x, 0, z]}
+      onClick={
+        onClick
+          ? (event) => {
+              event.stopPropagation();
+              onClick();
+            }
+          : undefined
+      }
+      onPointerOver={
+        onClick
+          ? (event) => {
+              event.stopPropagation();
+              setHovered(true);
+              document.body.style.cursor = "pointer";
+            }
+          : undefined
+      }
+      onPointerOut={
+        onClick
+          ? () => {
+              setHovered(false);
+              document.body.style.cursor = "auto";
+            }
+          : undefined
+      }
+    >
+      <HexPlatformBase glowColor={hovered ? "#eaf6ff" : "#5ad8ff"} emissiveIntensity={hovered ? 0.9 : 0.6} />
 
+      {/* Only the project title is ever shown floating over a platform
+          (docs/BRIDGE.md "Project world text") -- agent presence is
+          communicated entirely through the robots themselves. */}
       <Text
         position={[0, PLATFORM_HEIGHT + 2.6, 0]}
         fontSize={0.42}
@@ -460,117 +559,188 @@ function ProjectPlatform({
         {group.projectName}
       </Text>
 
-      {sessionSlots.length === 0 ? (
-        <Html position={[0, PLATFORM_HEIGHT + 0.6, 0]} center distanceFactor={14} occlude>
-          <p className="world-scene-empty-note">No sessions yet</p>
-        </Html>
-      ) : (
-        sessionSlots.map(({ session, angle, radius }) => (
-          <SessionMarker
-            key={session.id}
-            session={session}
-            angle={angle}
-            radius={radius}
-            live={presence.get(session.sessionRef)}
-            canRevoke={session.ownerId === viewerId || session.workspaceId === viewerWorkspaceId}
-          />
-        ))
-      )}
+      <Firepit />
+
+      {dockSlots.map(({ session, angle, dockRadius }) => (
+        <AgentRobot
+          key={session.id}
+          provider={session.provider}
+          dockAngle={angle}
+          dockRadius={dockRadius}
+          baseY={PLATFORM_HEIGHT}
+          online={presence.get(session.sessionRef)?.state === "online"}
+          seed={hashString(session.id + ":wander")}
+        />
+      ))}
     </group>
   );
 }
 
-/** Radians/second an online session's marker orbits its platform center at. */
-const ORBIT_SPEED = 0.5;
+type RobotState = "OFFLINE_DOCKED" | "WALKING_OUT" | "ONLINE_WALKING" | "WALKING_TO_DOCK";
+const TRANSITION_SECONDS = 1.3;
+const WANDER_SPEED = 0.6;
+const WANDER_RADIUS = 0.35;
+const LEG_SPEED = 8;
 
-function SessionMarker({
-  session,
-  angle,
-  radius,
-  live,
-  canRevoke,
+function smoothstep(t: number): number {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+}
+
+/** One provider-colored robot standing in for a linked agent session. Docks
+ * (stands still, parked) at a fixed hash-derived slot while offline, walks
+ * out toward the platform's center and wanders near an "active" spot while
+ * online -- and animates through the transition rather than teleporting
+ * between the two, per the state machine in docs/BRIDGE.md "Robot state
+ * transitions". The head sphere's color always reflects the *current*
+ * online prop directly; only the body's position/state is what animates
+ * gradually. */
+function AgentRobot({
+  provider,
+  dockAngle,
+  dockRadius,
+  baseY,
+  online,
+  seed,
 }: {
-  session: DisplaySession;
-  angle: number;
-  radius: number;
-  live?: PresenceEntry;
-  canRevoke: boolean;
+  provider: AgentProvider;
+  dockAngle: number;
+  dockRadius: number;
+  baseY: number;
+  online: boolean;
+  seed: number;
 }) {
-  const online = live?.state === "online";
-  const docked = live?.state === "offline";
-  const orbitRef = useRef<THREE.Group>(null);
-  const spinRef = useRef<THREE.Group>(null);
-  const color = online ? session.color.dark : "#3a4a55";
-  const dockX = Math.cos(angle) * radius;
-  const dockZ = Math.sin(angle) * radius;
-  const baseY = PLATFORM_HEIGHT;
+  const dockX = Math.cos(dockAngle) * dockRadius;
+  const dockZ = Math.sin(dockAngle) * dockRadius;
+  // The "active" wander center sits further inward along the same radial
+  // line as the dock -- walking straight in/out never crosses another
+  // robot's own line, and stays clear of the firepit at the exact center.
+  const activeRadius = Math.max(0.9, dockRadius - 0.55);
+  const activeX = Math.cos(dockAngle) * activeRadius;
+  const activeZ = Math.sin(dockAngle) * activeRadius;
+
+  const groupRef = useRef<THREE.Group>(null);
+  const bodyRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Mesh>(null);
+  const rightLegRef = useRef<THREE.Mesh>(null);
+
+  const [state, setState] = useState<RobotState>(online ? "ONLINE_WALKING" : "OFFLINE_DOCKED");
+  const wasOnline = useRef(online);
+  const elapsedRef = useRef(0);
+  const transitionRef = useRef<{ start: number; fromX: number; fromZ: number } | null>(null);
+
+  useEffect(() => {
+    if (online === wasOnline.current) return;
+    wasOnline.current = online;
+    const current = groupRef.current;
+    transitionRef.current = {
+      start: elapsedRef.current,
+      fromX: current ? current.position.x : dockX,
+      fromZ: current ? current.position.z : dockZ,
+    };
+    setState(online ? "WALKING_OUT" : "WALKING_TO_DOCK");
+    // dockX/dockZ are derived from props that don't change for this robot's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
+
+  const color = PROVIDER_COLORS[provider];
 
   useFrame(({ clock }) => {
-    if (!orbitRef.current || !spinRef.current) return;
+    const group = groupRef.current;
+    if (!group) return;
     const t = clock.getElapsedTime();
-    if (online) {
-      // Actually orbits the platform center at its own radius/speed, rather
-      // than just bobbing in place -- a session that's working should look
-      // like it's doing laps, not idling.
-      const liveAngle = angle + t * ORBIT_SPEED;
-      orbitRef.current.position.x = Math.cos(liveAngle) * radius;
-      orbitRef.current.position.z = Math.sin(liveAngle) * radius;
-      orbitRef.current.position.y = baseY + 0.55 + Math.sin(t * 2 + angle) * 0.12;
-      spinRef.current.rotation.y = t * 0.8;
-    } else {
-      // Parked back at its fixed dock slot -- the ring below marks the same
-      // spot, so this reads as "returned to the dock," not "vanished."
-      orbitRef.current.position.x = dockX;
-      orbitRef.current.position.z = dockZ;
-      orbitRef.current.position.y = baseY + 0.4;
-      spinRef.current.rotation.y = 0;
-    }
-  });
+    elapsedRef.current = t;
 
-  const displayName = session.label || agentProviderLabel(session.provider);
-  let statusText: string;
-  if (online) statusText = live?.activity ?? "Online";
-  else if (docked) statusText = "Docked";
-  else statusText = `Registered · ${relativeTime(session.createdAt)}`;
+    let walking = false;
+
+    if (state === "OFFLINE_DOCKED") {
+      group.position.set(dockX, baseY, dockZ);
+      group.rotation.y = dockAngle + Math.PI;
+    } else if (state === "ONLINE_WALKING") {
+      walking = true;
+      const wx = activeX + Math.sin(t * WANDER_SPEED + seed) * WANDER_RADIUS;
+      const wz = activeZ + Math.cos(t * WANDER_SPEED * 1.3 + seed) * WANDER_RADIUS;
+      group.position.set(wx, baseY, wz);
+      group.rotation.y = -(t * WANDER_SPEED + seed) + Math.PI / 2;
+    } else {
+      // WALKING_OUT / WALKING_TO_DOCK -- animate between the two fixed
+      // endpoints rather than snapping, per the required state machine.
+      walking = true;
+      const trans = transitionRef.current;
+      const targetX = state === "WALKING_OUT" ? activeX : dockX;
+      const targetZ = state === "WALKING_OUT" ? activeZ : dockZ;
+      const fromX = trans?.fromX ?? dockX;
+      const fromZ = trans?.fromZ ?? dockZ;
+      const start = trans?.start ?? t;
+      const progress = smoothstep((t - start) / TRANSITION_SECONDS);
+      const px = fromX + (targetX - fromX) * progress;
+      const pz = fromZ + (targetZ - fromZ) * progress;
+      group.position.set(px, baseY, pz);
+      group.rotation.y = Math.atan2(targetX - fromX, targetZ - fromZ);
+
+      if (progress >= 1) {
+        setState(state === "WALKING_OUT" ? "ONLINE_WALKING" : "OFFLINE_DOCKED");
+      }
+    }
+
+    if (bodyRef.current) {
+      bodyRef.current.position.y = walking ? Math.abs(Math.sin(t * LEG_SPEED)) * 0.04 : 0;
+    }
+    const legAngle = walking ? Math.sin(t * LEG_SPEED) * 0.5 : 0;
+    if (leftLegRef.current) leftLegRef.current.rotation.x = legAngle;
+    if (rightLegRef.current) rightLegRef.current.rotation.x = -legAngle;
+  });
 
   return (
     <group>
-      {/* Docking-bay ring, fixed at this session's home slot on top of the
-          platform -- the "charging station" it's parked in while offline,
-          and the spot it departs from/returns to while orbiting online. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[dockX, baseY + 0.015, dockZ]}>
-        <ringGeometry args={[0.34, 0.42, 24]} />
-        <meshBasicMaterial color={online ? color : "#1c2a33"} transparent opacity={0.9} />
-      </mesh>
+      {/* The charging dock itself: a small fixed pad + pillar at this
+          session's own hash-derived slot, always present regardless of the
+          robot's current state -- it's the "home" the robot walks back to. */}
+      <group position={[dockX, baseY, dockZ]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+          <ringGeometry args={[0.3, 0.4, 20]} />
+          <meshBasicMaterial color={online ? color : "#93a1ab"} transparent opacity={0.9} />
+        </mesh>
+        <mesh position={[0, 0.09, 0]}>
+          <cylinderGeometry args={[0.05, 0.07, 0.18, 8]} />
+          <meshStandardMaterial color="#3a4550" roughness={0.6} metalness={0.5} />
+        </mesh>
+      </group>
 
-      <group ref={orbitRef} position={[dockX, baseY + 0.4, dockZ]}>
-        <group ref={spinRef}>
-          <mesh>
-            <octahedronGeometry args={[0.32, 0]} />
-            <meshStandardMaterial
-              color={color}
-              emissive={color}
-              emissiveIntensity={online ? 2.2 : 0.25}
-              roughness={0.3}
-              metalness={0.4}
-            />
+      <group ref={groupRef} position={[dockX, baseY, dockZ]}>
+        <group ref={bodyRef}>
+          {/* Body */}
+          <mesh position={[0, 0.26, 0]}>
+            <boxGeometry args={[0.24, 0.26, 0.18]} />
+            <meshStandardMaterial color={color} roughness={0.4} metalness={0.3} />
+          </mesh>
+          {/* Head */}
+          <mesh position={[0, 0.46, 0]}>
+            <boxGeometry args={[0.18, 0.16, 0.16]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} roughness={0.35} metalness={0.3} />
+          </mesh>
+          {/* Legs */}
+          <mesh ref={leftLegRef} position={[-0.07, 0.13, 0]}>
+            <boxGeometry args={[0.07, 0.26, 0.09]} />
+            <meshStandardMaterial color="#2b333a" roughness={0.6} />
+          </mesh>
+          <mesh ref={rightLegRef} position={[0.07, 0.13, 0]}>
+            <boxGeometry args={[0.07, 0.26, 0.09]} />
+            <meshStandardMaterial color="#2b333a" roughness={0.6} />
           </mesh>
         </group>
 
-        <Html position={[0, 0.75, 0]} center distanceFactor={11} occlude>
-          <div className="world-scene-card">
-            <p className="world-scene-card-name">{displayName}</p>
-            <p className="world-scene-card-status">{statusText}</p>
-            {canRevoke ? (
-              <form action={revokeAgentSessionAction}>
-                <input type="hidden" name="sessionId" value={session.id} />
-                <button type="submit" className="world-scene-card-revoke">
-                  Revoke
-                </button>
-              </form>
-            ) : null}
-          </div>
-        </Html>
+        {/* Status sphere, always floating above the head -- green while
+            online, gray while offline, reflecting the *current* state
+            directly rather than whatever the body is animating through. */}
+        <mesh position={[0, 0.72, 0]}>
+          <sphereGeometry args={[0.06, 12, 12]} />
+          <meshStandardMaterial
+            color={online ? "#3fbf6f" : "#8a97a3"}
+            emissive={online ? "#3fbf6f" : "#3a4247"}
+            emissiveIntensity={online ? 1.8 : 0.3}
+          />
+        </mesh>
       </group>
     </group>
   );
