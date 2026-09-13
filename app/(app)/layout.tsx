@@ -27,7 +27,7 @@ export default async function AppLayout({
         would stack by DOM order (it comes before <main> in the tree, so a
         fixed descendant of <main> would paint over it).
       */}
-      <div className="relative z-20 lg:flex-none">
+      <div className="relative z-20 self-start lg:flex-none">
         <AppNav session={session} attentionCount={alerts.length} />
       </div>
       <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">

@@ -383,7 +383,18 @@ function HexPlatformBase({
           metalness={0.3}
         />
       </mesh>
-      <mesh position={[0, PLATFORM_HEIGHT + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/*
+        CylinderGeometry's own theta=0 vertex sits at local (0,0,r) (+Z);
+        RingGeometry's sits at local (r,0,0) (+X) -- a fixed 90 deg mismatch
+        baked into the two geometry types themselves, independent of
+        whatever rotation gets applied on top (verified numerically: the old
+        single-Euler [-90,0,30] and a naive [-90,0,0]-inside-a-30deg-group
+        both land the ring's vertex at the exact same world point, since
+        Ry(30)*Rx(-90) == Rx(-90)*Rz(30) is a rotation-conjugation identity
+        -- so neither was ever a real fix). The extra -90 deg on Z below is
+        what actually rotates the ring's local zero onto the cylinder's.
+      */}
+      <mesh position={[0, PLATFORM_HEIGHT + 0.01, 0]} rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
         {dashed ? (
           <ringGeometry args={[PLATFORM_RADIUS - 0.12, PLATFORM_RADIUS, 6, 1, 0, Math.PI * 1.7]} />
         ) : (
