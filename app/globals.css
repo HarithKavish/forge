@@ -455,6 +455,121 @@ textarea:focus-visible,
     color: var(--text);
   }
 
+  /* --- Worldview: the world itself ---------------------------------------
+     Not a page of stacked sections -- a canvas. Islands float on a soft
+     gradient ground; the only other thing on screen is one dashed "+"
+     island for connecting something new. Everything else (pairing, manual
+     registration) lives behind that "+", in a modal. */
+  .world-canvas {
+    position: relative;
+    min-height: calc(100dvh - 8rem);
+    padding: 2.5rem clamp(1rem, 4vw, 3rem);
+    border-radius: var(--radius-card);
+    background:
+      radial-gradient(ellipse 60% 45% at 30% 20%, var(--surface-soft), transparent 70%),
+      radial-gradient(ellipse 55% 40% at 75% 70%, var(--surface-soft), transparent 70%),
+      var(--surface-sunken);
+    overflow: hidden;
+  }
+
+  .world-islands {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: center;
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+  }
+
+  .world-island {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    width: 13.5rem;
+    padding: 1.5rem 1.25rem 1.25rem;
+    border-radius: 44% 56% 52% 48% / 48% 44% 56% 52%;
+    background: linear-gradient(180deg, var(--surface-strong) 0%, var(--surface) 78%);
+    box-shadow: var(--shadow-strong);
+  }
+
+  .world-island-name {
+    font-size: 0.92rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  .world-island-tokens {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.85rem 0.6rem;
+  }
+
+  .world-island-empty-note {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .world-island--empty {
+    justify-content: center;
+    border: 1.5px dashed var(--border);
+    background: transparent;
+    box-shadow: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  }
+
+  .world-island--empty:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    transform: translateY(-2px);
+  }
+
+  .world-island-plus {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    border: 1.5px dashed currentColor;
+  }
+
+  .world-island-add-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  /* Native <dialog> -- reset its default chrome, let world-modal-content
+     carry the actual card styling. showModal() centers and traps focus for
+     free; ::backdrop gives the dim overlay. */
+  .world-modal {
+    border: none;
+    padding: 0;
+    background: transparent;
+    max-width: min(30rem, calc(100vw - 2rem));
+    width: 100%;
+  }
+
+  .world-modal::backdrop {
+    background: rgba(15, 18, 22, 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .world-modal-content {
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-strong);
+    padding: 1.5rem;
+    max-height: calc(100dvh - 4rem);
+    overflow-y: auto;
+  }
+
   /* --- Navigation ------------------------------------------------------- */
 
   .nav-link {
