@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { listAlerts } from "@/lib/data/queries";
 import { AppNav } from "@/components/shell/app-nav";
+import { ContentFrame } from "@/components/shell/content-frame";
 
 /**
  * The authenticated shell.
@@ -18,10 +19,8 @@ export default async function AppLayout({
   return (
     <div className="relative z-10 flex min-h-dvh flex-col lg:flex-row">
       <AppNav session={session} attentionCount={alerts.length} />
-      <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
-          {children}
-        </div>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ContentFrame>{children}</ContentFrame>
       </main>
     </div>
   );
