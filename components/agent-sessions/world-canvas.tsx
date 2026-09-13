@@ -235,15 +235,19 @@ function AddAgentModal({
   );
 }
 
+/**
+ * One island per real Forge project, nothing else (docs/BRIDGE.md
+ * "Projects are not managed here") -- a session with no projectId (e.g.
+ * one registered through the still-hidden advanced forms without picking
+ * a project) has nothing to render as its own island for; it simply
+ * doesn't appear here until it's linked to a project. There is
+ * deliberately no synthetic "no project" grouping.
+ */
 function groupByProject(sessions: DisplaySession[], projects: SelectableProject[]): WorldGroup[] {
   const byId = new Map<string, DisplaySession[]>();
-  const unassigned: DisplaySession[] = [];
 
   for (const session of sessions) {
-    if (!session.projectId) {
-      unassigned.push(session);
-      continue;
-    }
+    if (!session.projectId) continue;
     const bucket = byId.get(session.projectId) ?? [];
     bucket.push(session);
     byId.set(session.projectId, bucket);
@@ -255,18 +259,14 @@ function groupByProject(sessions: DisplaySession[], projects: SelectableProject[
     sessions: group,
   }));
 
-  // Every project shows as a platform even with zero sessions registered to
-  // it yet -- otherwise a freshly created project never appears until
-  // someone pairs an agent to it, which is backwards for "the world shows
-  // what exists."
+  // Every project shows as a platform even with zero sessions linked to it
+  // yet -- otherwise a freshly created project never appears until
+  // someone links a session, which is backwards for "the world shows what
+  // exists."
   for (const project of projects) {
     if (!byId.has(project.id)) {
       groups.push({ projectId: project.id, projectName: project.name, sessions: [] });
     }
-  }
-
-  if (unassigned.length > 0) {
-    groups.push({ projectId: undefined, projectName: "No project", sessions: unassigned });
   }
 
   return groups;
