@@ -394,154 +394,90 @@ textarea:focus-visible,
     }
   }
 
-  /* --- Worldview avatar tokens -------------------------------------------
-     Online: a soft repeating pulse -- "doing something". Offline: grayscale
-     + dimmed -- "docked". Reduced motion gets a static ring instead of the
-     animation, never nothing (the state must still read). */
-  .worldview-avatar {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 999px;
-    color: #fff;
-    font-weight: 650;
-    font-size: 0.85rem;
-    transition: filter 200ms ease, opacity 200ms ease;
-  }
-
-  .worldview-avatar--offline {
-    filter: grayscale(0.85);
-    opacity: 0.55;
-  }
-
-  .worldview-avatar--online {
-    animation: worldview-pulse 2.4s ease-out infinite;
-  }
-
-  @keyframes worldview-pulse {
-    0% {
-      box-shadow: 0 0 0 0 var(--status-healthy-border);
-    }
-    70% {
-      box-shadow: 0 0 0 9px rgba(0, 0, 0, 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .worldview-avatar--online {
-      animation: none;
-      box-shadow: 0 0 0 3px var(--status-healthy-border);
-    }
-  }
-
-  .worldview-avatar-badge {
-    position: absolute;
-    top: -0.3rem;
-    right: -0.3rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.35rem;
-    height: 1.35rem;
-    border-radius: 999px;
-    background: var(--surface);
-    box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--border);
-    color: var(--text);
-  }
 
   /* --- Worldview: the world itself ---------------------------------------
-     Not a page of stacked sections -- a canvas. Islands float on a soft
-     gradient ground; the only other thing on screen is one dashed "+"
-     island for connecting something new. Everything else (pairing, manual
-     registration) lives behind that "+", in a modal. */
+     Not a page of stacked sections -- a 3D Tron-style grid (world-scene.tsx,
+     visual language borrowed from github.com/Kvadratni/thegrid): one glowing
+     platform per project, agent sessions as markers on it, one dashed "+"
+     platform for connecting something new. Everything else (pairing, manual
+     registration) lives behind that "+", in a modal.
+
+     Deliberately dark regardless of the app's light/dark theme toggle -- a
+     neon grid on a white background isn't a variant of this design, it's a
+     different one. Same reasoning a code editor's syntax theme doesn't
+     follow the IDE chrome's theme. */
   .world-canvas {
     position: relative;
-    min-height: calc(100dvh - 8rem);
-    padding: 2.5rem clamp(1rem, 4vw, 3rem);
+    height: calc(100dvh - 8rem);
+    min-height: 32rem;
     border-radius: var(--radius-card);
-    background:
-      radial-gradient(ellipse 60% 45% at 30% 20%, var(--surface-soft), transparent 70%),
-      radial-gradient(ellipse 55% 40% at 75% 70%, var(--surface-soft), transparent 70%),
-      var(--surface-sunken);
     overflow: hidden;
+    background: #05070a;
   }
 
-  .world-islands {
+  .world-canvas canvas {
+    display: block;
+  }
+
+  .world-scene-loading {
     display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    align-items: center;
     justify-content: center;
-    gap: clamp(1.5rem, 4vw, 3.5rem);
+    height: 100%;
+    color: #5ad8ff;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
   }
 
-  .world-island {
-    position: relative;
+  /* HTML overlays anchored to 3D positions (drei's <Html>) -- real DOM, so
+     labels and the revoke button stay accessible rather than being drawn
+     geometry. Dark-only to match the canvas, not the app theme. */
+  .world-scene-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.9rem;
-    width: 13.5rem;
-    padding: 1.5rem 1.25rem 1.25rem;
-    border-radius: 44% 56% 52% 48% / 48% 44% 56% 52%;
-    background: linear-gradient(180deg, var(--surface-strong) 0%, var(--surface) 78%);
-    box-shadow: var(--shadow-strong);
-  }
-
-  .world-island-name {
-    font-size: 0.92rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
-    text-align: center;
-    text-wrap: balance;
-  }
-
-  .world-island-tokens {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.85rem 0.6rem;
-  }
-
-  .world-island-empty-note {
-    font-size: 0.78rem;
-    color: var(--muted);
-  }
-
-  .world-island--empty {
-    justify-content: center;
-    border: 1.5px dashed var(--border);
-    background: transparent;
-    box-shadow: none;
-    color: var(--muted);
-    cursor: pointer;
-    transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
-  }
-
-  .world-island--empty:hover {
-    border-color: var(--accent);
-    color: var(--text);
-    transform: translateY(-2px);
-  }
-
-  .world-island-plus {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
+    gap: 0.15rem;
+    padding: 0.4rem 0.7rem;
     border-radius: 999px;
-    border: 1.5px dashed currentColor;
+    background: rgba(5, 10, 14, 0.78);
+    border: 1px solid rgba(90, 216, 255, 0.35);
+    white-space: nowrap;
+    pointer-events: auto;
   }
 
-  .world-island-add-label {
-    font-size: 0.85rem;
-    font-weight: 600;
+  .world-scene-card-name {
+    margin: 0;
+    font-size: 0.76rem;
+    font-weight: 650;
+    color: #eaf6ff;
+  }
+
+  .world-scene-card-status {
+    margin: 0;
+    font-size: 0.68rem;
+    color: #8fb9c9;
+  }
+
+  .world-scene-card-revoke {
+    margin-top: 0.1rem;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.66rem;
+    color: #6f8590;
+    cursor: pointer;
+  }
+
+  .world-scene-card-revoke:hover {
+    color: #ff8a7a;
+    text-decoration: underline;
+  }
+
+  .world-scene-empty-note {
+    margin: 0;
+    font-size: 0.7rem;
+    color: #5f7684;
+    white-space: nowrap;
   }
 
   /* Native <dialog> -- reset its default chrome, let world-modal-content
