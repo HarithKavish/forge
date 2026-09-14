@@ -17,7 +17,7 @@
  * scope and cannot run server-side).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
@@ -587,6 +587,137 @@ function smoothstep(t: number): number {
   return c * c * (3 - 2 * c);
 }
 
+/** Total height of the humanoid fallback model's head-top, and of the
+ * Claude bot model's head-top -- used to place each model's own status
+ * sphere at a sensible height above whichever body is actually rendered. */
+const HUMANOID_TOP_Y = 0.54;
+const CLAUDE_BOT_TOP_Y = 0.32;
+
+/**
+ * The generic per-provider fallback body: a small box humanoid. Used for
+ * every provider except Claude, which gets its own model
+ * (`ClaudeBotModel`) -- see docs/BRIDGE.md "Robot models". Kept exactly as
+ * it was before that split, just extracted into its own component.
+ */
+function HumanoidModel({
+  color,
+  leftLegRef,
+  rightLegRef,
+}: {
+  color: string;
+  leftLegRef: RefObject<THREE.Object3D | null>;
+  rightLegRef: RefObject<THREE.Object3D | null>;
+}) {
+  return (
+    <>
+      <mesh position={[0, 0.26, 0]}>
+        <boxGeometry args={[0.24, 0.26, 0.18]} />
+        <meshStandardMaterial color={color} roughness={0.4} metalness={0.3} />
+      </mesh>
+      <mesh position={[0, 0.46, 0]}>
+        <boxGeometry args={[0.18, 0.16, 0.16]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} roughness={0.35} metalness={0.3} />
+      </mesh>
+      <mesh ref={leftLegRef as RefObject<THREE.Mesh>} position={[-0.07, 0.13, 0]}>
+        <boxGeometry args={[0.07, 0.26, 0.09]} />
+        <meshStandardMaterial color="#2b333a" roughness={0.6} />
+      </mesh>
+      <mesh ref={rightLegRef as RefObject<THREE.Mesh>} position={[0.07, 0.13, 0]}>
+        <boxGeometry args={[0.07, 0.26, 0.09]} />
+        <meshStandardMaterial color="#2b333a" roughness={0.6} />
+      </mesh>
+    </>
+  );
+}
+
+/**
+ * Claude's own pixel-art mark, built as a voxel model instead of a
+ * humanoid: a wide flat head with two ear nubs and two eye slits, standing
+ * on two pairs of short legs -- the exact silhouette of the mark, not a
+ * generic robot recolored orange (docs/BRIDGE.md "Robot models"). Legs are
+ * two 2-leg groups (not four independent legs) so the existing
+ * alternating-swing animation -- built for a 2-leg humanoid -- drives a
+ * quadruped marching gait with no change to the animation code itself.
+ */
+function ClaudeBotModel({
+  color,
+  leftLegRef,
+  rightLegRef,
+  leftEarRef,
+  rightEarRef,
+}: {
+  color: string;
+  leftLegRef: RefObject<THREE.Object3D | null>;
+  rightLegRef: RefObject<THREE.Object3D | null>;
+  leftEarRef: RefObject<THREE.Object3D | null>;
+  rightEarRef: RefObject<THREE.Object3D | null>;
+}) {
+  const bodyMaterial = <meshStandardMaterial color={color} roughness={0.45} metalness={0.15} />;
+  const legMaterial = <meshStandardMaterial color={color} roughness={0.5} metalness={0.15} />;
+  const eyeMaterial = <meshStandardMaterial color="#1a1512" roughness={0.8} />;
+
+  return (
+    <>
+      {/* Head/body -- one wide flat block, matching the mark's silhouette
+          rather than a tall humanoid torso. */}
+      <mesh position={[0, 0.22, 0]}>
+        <boxGeometry args={[0.34, 0.2, 0.16]} />
+        {bodyMaterial}
+      </mesh>
+
+      {/* Ear nubs, sitting in the lower-middle band of the head -- each
+          wrapped in its own ref group (rather than a flat mesh) so the
+          parent can wiggle it slightly with the gait. */}
+      <group ref={leftEarRef} position={[-0.205, 0.19, 0]}>
+        <mesh>
+          <boxGeometry args={[0.07, 0.06, 0.13]} />
+          {bodyMaterial}
+        </mesh>
+      </group>
+      <group ref={rightEarRef} position={[0.205, 0.19, 0]}>
+        <mesh>
+          <boxGeometry args={[0.07, 0.06, 0.13]} />
+          {bodyMaterial}
+        </mesh>
+      </group>
+
+      {/* Eye slits, flush on the front face just above the ears. */}
+      <mesh position={[-0.095, 0.245, 0.086]}>
+        <boxGeometry args={[0.035, 0.05, 0.01]} />
+        {eyeMaterial}
+      </mesh>
+      <mesh position={[0.095, 0.245, 0.086]}>
+        <boxGeometry args={[0.035, 0.05, 0.01]} />
+        {eyeMaterial}
+      </mesh>
+
+      {/* Two leg-pair groups, each a rigid cluster of two short legs --
+          the group pivots at the hip (y=0.12, where it meets the body),
+          not its own center, for a proper marching hinge. */}
+      <group ref={leftLegRef} position={[-0.1, 0.12, 0]}>
+        <mesh position={[-0.03, -0.06, 0]}>
+          <boxGeometry args={[0.045, 0.12, 0.06]} />
+          {legMaterial}
+        </mesh>
+        <mesh position={[0.03, -0.06, 0]}>
+          <boxGeometry args={[0.045, 0.12, 0.06]} />
+          {legMaterial}
+        </mesh>
+      </group>
+      <group ref={rightLegRef} position={[0.1, 0.12, 0]}>
+        <mesh position={[-0.03, -0.06, 0]}>
+          <boxGeometry args={[0.045, 0.12, 0.06]} />
+          {legMaterial}
+        </mesh>
+        <mesh position={[0.03, -0.06, 0]}>
+          <boxGeometry args={[0.045, 0.12, 0.06]} />
+          {legMaterial}
+        </mesh>
+      </group>
+    </>
+  );
+}
+
 /** One provider-colored robot standing in for a linked agent session. Docks
  * (stands still, parked) at a fixed hash-derived slot while offline, walks
  * out toward the platform's center and wanders near an "active" spot while
@@ -594,7 +725,12 @@ function smoothstep(t: number): number {
  * between the two, per the state machine in docs/BRIDGE.md "Robot state
  * transitions". The head sphere's color always reflects the *current*
  * online prop directly; only the body's position/state is what animates
- * gradually. */
+ * gradually.
+ *
+ * The physical model itself is provider-driven, not hardcoded to Claude
+ * (docs/BRIDGE.md "Robot models"): Claude gets its own voxel mark
+ * (`ClaudeBotModel`); every other provider keeps the original generic
+ * humanoid (`HumanoidModel`) until each gets a model of its own. */
 function AgentRobot({
   provider,
   dockAngle,
@@ -610,6 +746,7 @@ function AgentRobot({
   online: boolean;
   seed: number;
 }) {
+  const isClaudeBot = provider === "claude";
   const dockX = Math.cos(dockAngle) * dockRadius;
   const dockZ = Math.sin(dockAngle) * dockRadius;
   // The "active" wander center sits further inward along the same radial
@@ -621,8 +758,10 @@ function AgentRobot({
 
   const groupRef = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
-  const leftLegRef = useRef<THREE.Mesh>(null);
-  const rightLegRef = useRef<THREE.Mesh>(null);
+  const leftLegRef = useRef<THREE.Object3D>(null);
+  const rightLegRef = useRef<THREE.Object3D>(null);
+  const leftEarRef = useRef<THREE.Object3D>(null);
+  const rightEarRef = useRef<THREE.Object3D>(null);
 
   const [state, setState] = useState<RobotState>(online ? "ONLINE_WALKING" : "OFFLINE_DOCKED");
   const wasOnline = useRef(online);
@@ -689,6 +828,10 @@ function AgentRobot({
     const legAngle = walking ? Math.sin(t * LEG_SPEED) * 0.5 : 0;
     if (leftLegRef.current) leftLegRef.current.rotation.x = legAngle;
     if (rightLegRef.current) rightLegRef.current.rotation.x = -legAngle;
+    // Purely cosmetic on the Claude bot's ear nubs; no-op (empty groups)
+    // on the humanoid model.
+    if (leftEarRef.current) leftEarRef.current.rotation.z = legAngle * 0.4;
+    if (rightEarRef.current) rightEarRef.current.rotation.z = -legAngle * 0.4;
   });
 
   return (
@@ -709,31 +852,24 @@ function AgentRobot({
 
       <group ref={groupRef} position={[dockX, baseY, dockZ]}>
         <group ref={bodyRef}>
-          {/* Body */}
-          <mesh position={[0, 0.26, 0]}>
-            <boxGeometry args={[0.24, 0.26, 0.18]} />
-            <meshStandardMaterial color={color} roughness={0.4} metalness={0.3} />
-          </mesh>
-          {/* Head */}
-          <mesh position={[0, 0.46, 0]}>
-            <boxGeometry args={[0.18, 0.16, 0.16]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} roughness={0.35} metalness={0.3} />
-          </mesh>
-          {/* Legs */}
-          <mesh ref={leftLegRef} position={[-0.07, 0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.09]} />
-            <meshStandardMaterial color="#2b333a" roughness={0.6} />
-          </mesh>
-          <mesh ref={rightLegRef} position={[0.07, 0.13, 0]}>
-            <boxGeometry args={[0.07, 0.26, 0.09]} />
-            <meshStandardMaterial color="#2b333a" roughness={0.6} />
-          </mesh>
+          {isClaudeBot ? (
+            <ClaudeBotModel
+              color={color}
+              leftLegRef={leftLegRef}
+              rightLegRef={rightLegRef}
+              leftEarRef={leftEarRef}
+              rightEarRef={rightEarRef}
+            />
+          ) : (
+            <HumanoidModel color={color} leftLegRef={leftLegRef} rightLegRef={rightLegRef} />
+          )}
         </group>
 
-        {/* Status sphere, always floating above the head -- green while
-            online, gray while offline, reflecting the *current* state
-            directly rather than whatever the body is animating through. */}
-        <mesh position={[0, 0.72, 0]}>
+        {/* Status sphere, always floating above whichever model is
+            actually rendered -- green while online, gray while offline,
+            reflecting the *current* state directly rather than whatever
+            the body is animating through. */}
+        <mesh position={[0, (isClaudeBot ? CLAUDE_BOT_TOP_Y : HUMANOID_TOP_Y) + 0.14, 0]}>
           <sphereGeometry args={[0.06, 12, 12]} />
           <meshStandardMaterial
             color={online ? "#3fbf6f" : "#8a97a3"}
