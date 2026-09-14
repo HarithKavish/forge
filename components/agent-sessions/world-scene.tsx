@@ -173,7 +173,10 @@ export function WorldScene({
       <SkyDome />
       <Mountains />
       <Landscape />
-      <Trees excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)} />
+      <Trees
+        excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)}
+        extraExclude={{ x: SHOWCASE_ISLAND_POSITION[0], z: SHOWCASE_ISLAND_POSITION[1], radius: SHOWCASE_ISLAND_RADIUS }}
+      />
       <GridFloor />
 
       {groups.map((group, index) => (
@@ -185,6 +188,11 @@ export function WorldScene({
           onClick={group.projectId ? () => onProjectClick(group.projectId!) : undefined}
         />
       ))}
+
+      {/* Separate from the project-island cluster entirely -- a fixed
+          showcase platform, not one more project (docs/BRIDGE.md "Agent
+          gallery"). */}
+      <DisplayIsland />
 
       {SHOW_ADD_PLATFORM ? <AddPlatform position={positions[groups.length] ?? [0, 0]} onClick={onAddClick} /> : null}
 
@@ -289,7 +297,17 @@ function Mountains() {
 /** Simple low-poly trees (cone + trunk) scattered around the platform
  * cluster, thinning out toward the mountains. Instanced since there can be
  * several dozen. */
-function Trees({ excludeRadius }: { excludeRadius: number }) {
+function Trees({
+  excludeRadius,
+  extraExclude,
+}: {
+  excludeRadius: number;
+  /** A second clearing, centered somewhere other than the origin (the
+   * showcase island, currently) -- any tree that would land inside it is
+   * pushed radially out past its edge instead, rather than skipped
+   * outright, so the total tree count stays put. */
+  extraExclude?: { x: number; z: number; radius: number };
+}) {
   const foliageRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.InstancedMesh>(null);
   const count = 70;
@@ -300,8 +318,21 @@ function Trees({ excludeRadius }: { excludeRadius: number }) {
       const seed = i * 7.13;
       const angle = pseudoRandom(seed) * Math.PI * 2;
       const distance = excludeRadius + 3 + pseudoRandom(seed + 1) * (TERRAIN_RADIUS * 0.55);
-      const x = Math.cos(angle) * distance;
-      const z = Math.sin(angle) * distance;
+      let x = Math.cos(angle) * distance;
+      let z = Math.sin(angle) * distance;
+
+      if (extraExclude) {
+        const edx = x - extraExclude.x;
+        const edz = z - extraExclude.z;
+        const edist = Math.hypot(edx, edz);
+        if (edist < extraExclude.radius) {
+          const pushAngle = edist > 0.0001 ? Math.atan2(edz, edx) : angle;
+          const pushed = extraExclude.radius + 1.5;
+          x = extraExclude.x + Math.cos(pushAngle) * pushed;
+          z = extraExclude.z + Math.sin(pushAngle) * pushed;
+        }
+      }
+
       items.push({
         x,
         z,
@@ -310,7 +341,7 @@ function Trees({ excludeRadius }: { excludeRadius: number }) {
       });
     }
     return items;
-  }, [excludeRadius]);
+  }, [excludeRadius, extraExclude]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -498,6 +529,15 @@ function ProjectPlatform({
 }) {
   const [x, z] = position;
   const [hovered, setHovered] = useState(false);
+  // Shared, per-platform: every online robot here registers its live
+  // position so the others can steer around it (docs/BRIDGE.md "Agent
+  // gallery"). A plain ref, not state -- written every frame in each
+  // robot's own animation loop, never through React.
+  const neighborsRef = useRef<NeighborMap>(new Map());
+  // Robots roam the platform's full usable area, not a tight circle --
+  // out to near the edge, but clear of the firepit at the center.
+  const roamRadius = PLATFORM_RADIUS - 0.5;
+  const excludeRadius = 1.0;
 
   const dockSlots = useMemo(() => {
     // One dock per *linked* session, always -- online or offline doesn't
@@ -564,12 +604,16 @@ function ProjectPlatform({
       {dockSlots.map(({ session, angle, dockRadius }) => (
         <AgentRobot
           key={session.id}
+          robotKey={session.id}
           provider={session.provider}
           dockAngle={angle}
           dockRadius={dockRadius}
           baseY={PLATFORM_HEIGHT}
           online={presence.get(session.sessionRef)?.state === "online"}
           seed={hashString(session.id + ":wander")}
+          roamRadius={roamRadius}
+          excludeRadius={excludeRadius}
+          neighbors={neighborsRef.current}
         />
       ))}
     </group>
@@ -578,13 +622,75 @@ function ProjectPlatform({
 
 type RobotState = "OFFLINE_DOCKED" | "WALKING_OUT" | "ONLINE_WALKING" | "WALKING_TO_DOCK";
 const TRANSITION_SECONDS = 1.3;
-const WANDER_SPEED = 0.6;
-const WANDER_RADIUS = 0.35;
 const LEG_SPEED = 8;
+/** How close two robots on the same platform can get before they start
+ * steering apart (docs/BRIDGE.md "Agent gallery" -- "go around each other
+ * without bumping"). */
+const SEPARATION_RADIUS = 0.55;
+const SEPARATION_FORCE = 3.5;
 
 function smoothstep(t: number): number {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
+}
+
+/** Live (x, z) positions of every robot currently roaming one platform,
+ * keyed by a stable id -- shared per-platform so each robot's separation
+ * steering can see its neighbors without any of them re-rendering. Plain
+ * mutation of a Map, never touched by React state. */
+type NeighborMap = Map<string, { x: number; z: number }>;
+
+function clampToAnnulus(x: number, z: number, outerRadius: number, innerRadius: number): { x: number; z: number } {
+  const dist = Math.hypot(x, z);
+  if (dist > outerRadius) {
+    const s = outerRadius / dist;
+    return { x: x * s, z: z * s };
+  }
+  if (innerRadius > 0 && dist < innerRadius) {
+    if (dist < 0.0001) return { x: innerRadius, z: 0 };
+    const s = innerRadius / dist;
+    return { x: x * s, z: z * s };
+  }
+  return { x, z };
+}
+
+/** A smooth, non-circular wandering path covering most of the platform --
+ * two independent-frequency waves per axis, so it reads as organic
+ * roaming rather than a small fixed-radius orbit. Clamped to stay within
+ * `roamRadius` and clear of `excludeRadius` (a firepit, on project
+ * platforms; 0 on the showcase island, which has none). */
+function roamTarget(t: number, seed: number, roamRadius: number, excludeRadius: number): { x: number; z: number } {
+  const x =
+    Math.sin(t * 0.17 + seed) * roamRadius * 0.55 + Math.sin(t * 0.09 + seed * 1.7) * roamRadius * 0.45;
+  const z =
+    Math.cos(t * 0.13 + seed * 1.3) * roamRadius * 0.55 + Math.cos(t * 0.21 + seed * 0.6) * roamRadius * 0.45;
+  return clampToAnnulus(x, z, roamRadius, excludeRadius);
+}
+
+/** Lightweight pairwise separation ("boids"-lite, not pathfinding): nudges
+ * (x, z) away from every neighbor closer than SEPARATION_RADIUS, scaled by
+ * frame time so it reads as smooth steering rather than a jitter. */
+function applySeparation(
+  x: number,
+  z: number,
+  selfKey: string,
+  neighbors: NeighborMap,
+  delta: number,
+): { x: number; z: number } {
+  let dx = 0;
+  let dz = 0;
+  for (const [key, pos] of neighbors) {
+    if (key === selfKey) continue;
+    const ddx = x - pos.x;
+    const ddz = z - pos.z;
+    const dist = Math.hypot(ddx, ddz);
+    if (dist > 0.0001 && dist < SEPARATION_RADIUS) {
+      const push = (SEPARATION_RADIUS - dist) / SEPARATION_RADIUS;
+      dx += (ddx / dist) * push;
+      dz += (ddz / dist) * push;
+    }
+  }
+  return { x: x + dx * SEPARATION_FORCE * delta, z: z + dz * SEPARATION_FORCE * delta };
 }
 
 /** Total height of the humanoid fallback model's head-top, and of the
@@ -592,6 +698,11 @@ function smoothstep(t: number): number {
  * sphere at a sensible height above whichever body is actually rendered. */
 const HUMANOID_TOP_Y = 0.54;
 const CLAUDE_BOT_TOP_Y = 0.32;
+const GEMINI_TOP_Y = 0.5;
+/** The rest angle Gemini's two arms are held out from the body at --
+ * combined with a swing on top while walking, in the same place the
+ * per-frame animation loop already updates leg rotation. */
+const GEMINI_ARM_BASE_ANGLE = Math.PI * 0.32;
 
 /**
  * The generic per-provider fallback body: a small box humanoid. Used for
@@ -718,50 +829,228 @@ function ClaudeBotModel({
   );
 }
 
+/**
+ * Gemini's mark: a rounded, gradient teardrop -- not a humanoid recolored
+ * blue, the same principle as `ClaudeBotModel` (docs/BRIDGE.md "Robot
+ * models"). The body is a single `LatheGeometry` (a 2D profile spun around
+ * its own axis), which is what gives it a genuinely smooth, jelly-like
+ * silhouette rather than a blocky one -- with a real red -> green -> blue
+ * gradient baked in as per-vertex colors (the same technique `SkyDome`
+ * already uses for its sky gradient), not a flat fill. Two dot eyes, one
+ * curved smile (a partial torus, rotated so its arc opens upward), and two
+ * long rounded "hands" (capsules) complete the mark. No legs -- it
+ * "walks" by squashing and stretching as a whole (`bodyGroupRef`, driven
+ * by the parent), which suits a jelly body better than a fake hinge would.
+ */
+function GeminiBotModel({
+  leftArmRef,
+  rightArmRef,
+  bodyGroupRef,
+}: {
+  leftArmRef: RefObject<THREE.Object3D | null>;
+  rightArmRef: RefObject<THREE.Object3D | null>;
+  bodyGroupRef: RefObject<THREE.Group | null>;
+}) {
+  const bodyGeometry = useMemo(() => {
+    // Profile traced from the mark: a narrow rounded tip at the top,
+    // widening to its fullest a little below center, then rounding back
+    // in to a soft point at the bottom -- y=0 is the ground (this model's
+    // local origin convention matches the other two: feet/base at 0).
+    const profile = [
+      new THREE.Vector2(0.0, 0.5),
+      new THREE.Vector2(0.05, 0.44),
+      new THREE.Vector2(0.1, 0.36),
+      new THREE.Vector2(0.135, 0.26),
+      new THREE.Vector2(0.14, 0.16),
+      new THREE.Vector2(0.13, 0.08),
+      new THREE.Vector2(0.09, 0.02),
+      new THREE.Vector2(0.0, 0.0),
+    ];
+    const geo = new THREE.LatheGeometry(profile, 28);
+    const position = geo.attributes.position!;
+    const colors = new Float32Array(position.count * 3);
+    const top = new THREE.Color("#e0473f");
+    const mid = new THREE.Color("#3fa96e");
+    const bottom = new THREE.Color("#3f7fe0");
+    for (let i = 0; i < position.count; i += 1) {
+      const y = position.getY(i);
+      const t = 1 - THREE.MathUtils.clamp(y / 0.5, 0, 1);
+      const mixed = t < 0.5 ? top.clone().lerp(mid, t * 2) : mid.clone().lerp(bottom, (t - 0.5) * 2);
+      colors[i * 3] = mixed.r;
+      colors[i * 3 + 1] = mixed.g;
+      colors[i * 3 + 2] = mixed.b;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
+  return (
+    <group ref={bodyGroupRef}>
+      <mesh geometry={bodyGeometry}>
+        <meshStandardMaterial vertexColors roughness={0.2} metalness={0.05} transparent opacity={0.94} />
+      </mesh>
+
+      {/* Two dot eyes, flush on the front face. */}
+      <mesh position={[-0.05, 0.3, 0.125]}>
+        <sphereGeometry args={[0.018, 10, 10]} />
+        <meshStandardMaterial color="#14181c" roughness={0.6} />
+      </mesh>
+      <mesh position={[0.05, 0.3, 0.125]}>
+        <sphereGeometry args={[0.018, 10, 10]} />
+        <meshStandardMaterial color="#14181c" roughness={0.6} />
+      </mesh>
+
+      {/* Curved smile: a partial torus, rotated so its arc's own center
+          (naturally at angle = arc/2 for an unrotated torus) lands at
+          -90 deg -- the bottom of the ring, which curves upward like a
+          smile rather than a frown. */}
+      <mesh position={[0, 0.24, 0.128]} rotation={[0, 0, -Math.PI / 2 - Math.PI * 0.275]}>
+        <torusGeometry args={[0.045, 0.007, 8, 20, Math.PI * 0.55]} />
+        <meshStandardMaterial color="#14181c" roughness={0.6} />
+      </mesh>
+
+      {/* Long rounded "hands" -- capsules angled out from the sides;
+          their rest angle plus any walking swing is driven entirely by
+          the parent each frame (see AgentRobot/ShowcaseRobot). */}
+      <group ref={leftArmRef} position={[-0.13, 0.2, 0.02]}>
+        <mesh position={[0, -0.1, 0]}>
+          <capsuleGeometry args={[0.028, 0.16, 4, 8]} />
+          <meshStandardMaterial color="#4c8df6" roughness={0.25} metalness={0.05} transparent opacity={0.94} />
+        </mesh>
+      </group>
+      <group ref={rightArmRef} position={[0.13, 0.2, 0.02]}>
+        <mesh position={[0, -0.1, 0]}>
+          <capsuleGeometry args={[0.028, 0.16, 4, 8]} />
+          <meshStandardMaterial color="#4c8df6" roughness={0.25} metalness={0.05} transparent opacity={0.94} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/** Picks each provider's model and reports the height of its head-top, so
+ * callers (AgentRobot, ShowcaseRobot) share one place that knows which
+ * model goes with which provider (docs/BRIDGE.md "Robot models") instead
+ * of duplicating the switch. */
+function topYFor(provider: AgentProvider): number {
+  if (provider === "claude") return CLAUDE_BOT_TOP_Y;
+  if (provider === "gemini") return GEMINI_TOP_Y;
+  return HUMANOID_TOP_Y;
+}
+
+function AgentModel({
+  provider,
+  color,
+  leftLegRef,
+  rightLegRef,
+  leftEarRef,
+  rightEarRef,
+  leftArmRef,
+  rightArmRef,
+  bodyGroupRef,
+}: {
+  provider: AgentProvider;
+  color: string;
+  leftLegRef: RefObject<THREE.Object3D | null>;
+  rightLegRef: RefObject<THREE.Object3D | null>;
+  leftEarRef: RefObject<THREE.Object3D | null>;
+  rightEarRef: RefObject<THREE.Object3D | null>;
+  leftArmRef: RefObject<THREE.Object3D | null>;
+  rightArmRef: RefObject<THREE.Object3D | null>;
+  bodyGroupRef: RefObject<THREE.Group | null>;
+}) {
+  if (provider === "claude") {
+    return (
+      <ClaudeBotModel color={color} leftLegRef={leftLegRef} rightLegRef={rightLegRef} leftEarRef={leftEarRef} rightEarRef={rightEarRef} />
+    );
+  }
+  if (provider === "gemini") {
+    return <GeminiBotModel leftArmRef={leftArmRef} rightArmRef={rightArmRef} bodyGroupRef={bodyGroupRef} />;
+  }
+  return <HumanoidModel color={color} leftLegRef={leftLegRef} rightLegRef={rightLegRef} />;
+}
+
+/** The refs every model type might use, and the per-frame animation that
+ * drives them -- shared between a real session's `AgentRobot` and the
+ * showcase island's `ShowcaseRobot` so the two never drift out of sync
+ * with each other's gait. */
+function useModelRefs() {
+  const bodyRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Object3D>(null);
+  const rightLegRef = useRef<THREE.Object3D>(null);
+  const leftEarRef = useRef<THREE.Object3D>(null);
+  const rightEarRef = useRef<THREE.Object3D>(null);
+  const leftArmRef = useRef<THREE.Object3D>(null);
+  const rightArmRef = useRef<THREE.Object3D>(null);
+  const bodyGroupRef = useRef<THREE.Group>(null);
+  return { bodyRef, leftLegRef, rightLegRef, leftEarRef, rightEarRef, leftArmRef, rightArmRef, bodyGroupRef };
+}
+
+function animateModel(refs: ReturnType<typeof useModelRefs>, t: number, walking: boolean): void {
+  const { bodyRef, leftLegRef, rightLegRef, leftEarRef, rightEarRef, leftArmRef, rightArmRef, bodyGroupRef } = refs;
+  if (bodyRef.current) {
+    bodyRef.current.position.y = walking ? Math.abs(Math.sin(t * LEG_SPEED)) * 0.04 : 0;
+  }
+  const legAngle = walking ? Math.sin(t * LEG_SPEED) * 0.5 : 0;
+  if (leftLegRef.current) leftLegRef.current.rotation.x = legAngle;
+  if (rightLegRef.current) rightLegRef.current.rotation.x = -legAngle;
+  // Purely cosmetic on models that don't use them (empty refs elsewhere).
+  if (leftEarRef.current) leftEarRef.current.rotation.z = legAngle * 0.4;
+  if (rightEarRef.current) rightEarRef.current.rotation.z = -legAngle * 0.4;
+  if (leftArmRef.current) leftArmRef.current.rotation.z = GEMINI_ARM_BASE_ANGLE + legAngle * 0.5;
+  if (rightArmRef.current) rightArmRef.current.rotation.z = -GEMINI_ARM_BASE_ANGLE - legAngle * 0.5;
+  if (bodyGroupRef.current) {
+    const squash = walking ? Math.sin(t * LEG_SPEED) * 0.09 : 0;
+    bodyGroupRef.current.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
+  }
+}
+
 /** One provider-colored robot standing in for a linked agent session. Docks
  * (stands still, parked) at a fixed hash-derived slot while offline, walks
- * out toward the platform's center and wanders near an "active" spot while
- * online -- and animates through the transition rather than teleporting
- * between the two, per the state machine in docs/BRIDGE.md "Robot state
- * transitions". The head sphere's color always reflects the *current*
- * online prop directly; only the body's position/state is what animates
- * gradually.
+ * out and roams the platform while online -- and animates through the
+ * transition rather than teleporting between the two, per the state
+ * machine in docs/BRIDGE.md "Robot state transitions". The head sphere's
+ * color always reflects the *current* online prop directly; only the
+ * body's position/state is what animates gradually.
+ *
+ * Roaming (`roamTarget`) covers most of the platform rather than a small
+ * fixed circle, and `applySeparation` steers it away from any other robot
+ * on the same platform (tracked in the shared `neighbors` map) closer than
+ * SEPARATION_RADIUS -- docs/BRIDGE.md "Agent gallery": "go around each
+ * other without bumping."
  *
  * The physical model itself is provider-driven, not hardcoded to Claude
- * (docs/BRIDGE.md "Robot models"): Claude gets its own voxel mark
- * (`ClaudeBotModel`); every other provider keeps the original generic
- * humanoid (`HumanoidModel`) until each gets a model of its own. */
+ * (docs/BRIDGE.md "Robot models") -- see `AgentModel`. */
 function AgentRobot({
+  robotKey,
   provider,
   dockAngle,
   dockRadius,
   baseY,
   online,
   seed,
+  roamRadius,
+  excludeRadius,
+  neighbors,
 }: {
+  robotKey: string;
   provider: AgentProvider;
   dockAngle: number;
   dockRadius: number;
   baseY: number;
   online: boolean;
   seed: number;
+  roamRadius: number;
+  excludeRadius: number;
+  neighbors: NeighborMap;
 }) {
-  const isClaudeBot = provider === "claude";
   const dockX = Math.cos(dockAngle) * dockRadius;
   const dockZ = Math.sin(dockAngle) * dockRadius;
-  // The "active" wander center sits further inward along the same radial
-  // line as the dock -- walking straight in/out never crosses another
-  // robot's own line, and stays clear of the firepit at the exact center.
-  const activeRadius = Math.max(0.9, dockRadius - 0.55);
-  const activeX = Math.cos(dockAngle) * activeRadius;
-  const activeZ = Math.sin(dockAngle) * activeRadius;
 
   const groupRef = useRef<THREE.Group>(null);
-  const bodyRef = useRef<THREE.Group>(null);
-  const leftLegRef = useRef<THREE.Object3D>(null);
-  const rightLegRef = useRef<THREE.Object3D>(null);
-  const leftEarRef = useRef<THREE.Object3D>(null);
-  const rightEarRef = useRef<THREE.Object3D>(null);
+  const modelRefs = useModelRefs();
+  const prevPosRef = useRef({ x: dockX, z: dockZ });
 
   const [state, setState] = useState<RobotState>(online ? "ONLINE_WALKING" : "OFFLINE_DOCKED");
   const wasOnline = useRef(online);
@@ -782,56 +1071,80 @@ function AgentRobot({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online]);
 
+  // A robot that stops rendering (session unlinked, project reload) must
+  // stop repelling its former neighbors too.
+  useEffect(() => {
+    return () => {
+      neighbors.delete(robotKey);
+    };
+  }, [neighbors, robotKey]);
+
   const color = PROVIDER_COLORS[provider];
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     const group = groupRef.current;
     if (!group) return;
     const t = clock.getElapsedTime();
     elapsedRef.current = t;
 
     let walking = false;
+    let px = dockX;
+    let pz = dockZ;
 
     if (state === "OFFLINE_DOCKED") {
-      group.position.set(dockX, baseY, dockZ);
       group.rotation.y = dockAngle + Math.PI;
     } else if (state === "ONLINE_WALKING") {
       walking = true;
-      const wx = activeX + Math.sin(t * WANDER_SPEED + seed) * WANDER_RADIUS;
-      const wz = activeZ + Math.cos(t * WANDER_SPEED * 1.3 + seed) * WANDER_RADIUS;
-      group.position.set(wx, baseY, wz);
-      group.rotation.y = -(t * WANDER_SPEED + seed) + Math.PI / 2;
+      const roam = roamTarget(t, seed, roamRadius, excludeRadius);
+      const sep = applySeparation(roam.x, roam.z, robotKey, neighbors, delta);
+      const clamped = clampToAnnulus(sep.x, sep.z, roamRadius, excludeRadius);
+      px = clamped.x;
+      pz = clamped.z;
     } else {
-      // WALKING_OUT / WALKING_TO_DOCK -- animate between the two fixed
-      // endpoints rather than snapping, per the required state machine.
+      // WALKING_OUT / WALKING_TO_DOCK -- animate between the two endpoints
+      // rather than snapping, per the required state machine. WALKING_OUT's
+      // target is the *live* roam position, re-evaluated every frame and
+      // blended in via `progress`, so by the time progress reaches 1 the
+      // robot is already exactly where ONLINE_WALKING's own formula would
+      // put it -- no handoff snap.
       walking = true;
       const trans = transitionRef.current;
-      const targetX = state === "WALKING_OUT" ? activeX : dockX;
-      const targetZ = state === "WALKING_OUT" ? activeZ : dockZ;
+      const liveRoam = state === "WALKING_OUT" ? roamTarget(t, seed, roamRadius, excludeRadius) : null;
+      const targetX = liveRoam ? liveRoam.x : dockX;
+      const targetZ = liveRoam ? liveRoam.z : dockZ;
       const fromX = trans?.fromX ?? dockX;
       const fromZ = trans?.fromZ ?? dockZ;
       const start = trans?.start ?? t;
       const progress = smoothstep((t - start) / TRANSITION_SECONDS);
-      const px = fromX + (targetX - fromX) * progress;
-      const pz = fromZ + (targetZ - fromZ) * progress;
-      group.position.set(px, baseY, pz);
-      group.rotation.y = Math.atan2(targetX - fromX, targetZ - fromZ);
+      px = fromX + (targetX - fromX) * progress;
+      pz = fromZ + (targetZ - fromZ) * progress;
+      if (state === "WALKING_OUT") {
+        const sep = applySeparation(px, pz, robotKey, neighbors, delta);
+        px = sep.x;
+        pz = sep.z;
+      }
 
       if (progress >= 1) {
         setState(state === "WALKING_OUT" ? "ONLINE_WALKING" : "OFFLINE_DOCKED");
       }
     }
 
-    if (bodyRef.current) {
-      bodyRef.current.position.y = walking ? Math.abs(Math.sin(t * LEG_SPEED)) * 0.04 : 0;
+    group.position.set(px, baseY, pz);
+    neighbors.set(robotKey, { x: px, z: pz });
+
+    // Face the direction of actual travel -- robust to the roam path and
+    // separation both nudging the target continuously, unlike a
+    // closed-form tangent.
+    if (walking) {
+      const dx = px - prevPosRef.current.x;
+      const dz = pz - prevPosRef.current.z;
+      if (Math.hypot(dx, dz) > 0.0005) {
+        group.rotation.y = Math.atan2(dx, dz);
+      }
     }
-    const legAngle = walking ? Math.sin(t * LEG_SPEED) * 0.5 : 0;
-    if (leftLegRef.current) leftLegRef.current.rotation.x = legAngle;
-    if (rightLegRef.current) rightLegRef.current.rotation.x = -legAngle;
-    // Purely cosmetic on the Claude bot's ear nubs; no-op (empty groups)
-    // on the humanoid model.
-    if (leftEarRef.current) leftEarRef.current.rotation.z = legAngle * 0.4;
-    if (rightEarRef.current) rightEarRef.current.rotation.z = -legAngle * 0.4;
+    prevPosRef.current = { x: px, z: pz };
+
+    animateModel(modelRefs, t, walking);
   });
 
   return (
@@ -851,25 +1164,15 @@ function AgentRobot({
       </group>
 
       <group ref={groupRef} position={[dockX, baseY, dockZ]}>
-        <group ref={bodyRef}>
-          {isClaudeBot ? (
-            <ClaudeBotModel
-              color={color}
-              leftLegRef={leftLegRef}
-              rightLegRef={rightLegRef}
-              leftEarRef={leftEarRef}
-              rightEarRef={rightEarRef}
-            />
-          ) : (
-            <HumanoidModel color={color} leftLegRef={leftLegRef} rightLegRef={rightLegRef} />
-          )}
+        <group ref={modelRefs.bodyRef}>
+          <AgentModel provider={provider} color={color} {...modelRefs} />
         </group>
 
         {/* Status sphere, always floating above whichever model is
             actually rendered -- green while online, gray while offline,
             reflecting the *current* state directly rather than whatever
             the body is animating through. */}
-        <mesh position={[0, (isClaudeBot ? CLAUDE_BOT_TOP_Y : HUMANOID_TOP_Y) + 0.14, 0]}>
+        <mesh position={[0, topYFor(provider) + 0.14, 0]}>
           <sphereGeometry args={[0.06, 12, 12]} />
           <meshStandardMaterial
             color={online ? "#3fbf6f" : "#8a97a3"}
@@ -878,6 +1181,141 @@ function AgentRobot({
           />
         </mesh>
       </group>
+    </group>
+  );
+}
+
+/** Fixed offset from the origin, clear of the project-island cluster and
+ * the ring of trees scattered around it -- see the `extraExclude` passed
+ * to `<Trees>` in `WorldScene`, which carves the same clearing out of the
+ * tree scatter so the island doesn't spawn inside a thicket. */
+const SHOWCASE_ISLAND_POSITION: [number, number] = [HEX_SIZE * 14, 0];
+const SHOWCASE_ISLAND_RADIUS = PLATFORM_RADIUS + 2.5;
+const SHOWCASE_RING_COLOR = "#e8b84b";
+
+/** One character per agent provider that has its own model so far
+ * (docs/BRIDGE.md "Agent gallery") -- added to as each provider gets a
+ * real model built, not tied to any project or real session. */
+const SHOWCASE_CHARACTERS: { provider: AgentProvider; key: string }[] = [
+  { provider: "claude", key: "showcase-claude" },
+  { provider: "gemini", key: "showcase-gemini" },
+];
+
+/**
+ * A dedicated showcase platform, separate from the project-island cluster
+ * entirely (docs/BRIDGE.md "Agent gallery") -- one sample character per
+ * agent provider that has a model built, for pure visualization. Same dark
+ * platform body as a project island, but with a golden ring instead of
+ * the usual blue, and every character's status sphere is the same gold --
+ * signaling "this is a display, not a real linked session" (never
+ * green/gray, since there is no real online/offline state here at all).
+ * Characters roam the whole platform continuously and steer around each
+ * other exactly like real online robots do (`ShowcaseRobot` reuses the
+ * same roam/separation logic `AgentRobot` uses) -- there's no docked
+ * state here, since a showcase character was never "offline" to begin
+ * with.
+ */
+function DisplayIsland() {
+  const [x, z] = SHOWCASE_ISLAND_POSITION;
+  const neighborsRef = useRef<NeighborMap>(new Map());
+  const roamRadius = PLATFORM_RADIUS - 0.5;
+
+  return (
+    <group position={[x, 0, z]}>
+      <HexPlatformBase glowColor={SHOWCASE_RING_COLOR} emissiveIntensity={0.65} />
+
+      <Text
+        position={[0, PLATFORM_HEIGHT + 2.6, 0]}
+        fontSize={0.42}
+        color="#f5d98a"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.02}
+        outlineColor="#05070a"
+      >
+        Agent Gallery
+      </Text>
+
+      {SHOWCASE_CHARACTERS.map((character) => (
+        <ShowcaseRobot
+          key={character.key}
+          robotKey={character.key}
+          provider={character.provider}
+          baseY={PLATFORM_HEIGHT}
+          roamRadius={roamRadius}
+          seed={hashString(character.key)}
+          neighbors={neighborsRef.current}
+        />
+      ))}
+    </group>
+  );
+}
+
+/** A showcase character on the Agent Gallery island: always roaming, never
+ * docked (there's no real presence to be offline from), always a golden
+ * status sphere. Deliberately its own component rather than `AgentRobot`
+ * with flags threaded through it -- the two have almost nothing in common
+ * behaviorally beyond sharing a model and the roam/separation math. */
+function ShowcaseRobot({
+  robotKey,
+  provider,
+  baseY,
+  roamRadius,
+  seed,
+  neighbors,
+}: {
+  robotKey: string;
+  provider: AgentProvider;
+  baseY: number;
+  roamRadius: number;
+  seed: number;
+  neighbors: NeighborMap;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const modelRefs = useModelRefs();
+  const prevPosRef = useRef({ x: 0, z: 0 });
+  const color = PROVIDER_COLORS[provider];
+
+  useEffect(() => {
+    return () => {
+      neighbors.delete(robotKey);
+    };
+  }, [neighbors, robotKey]);
+
+  useFrame(({ clock }, delta) => {
+    const group = groupRef.current;
+    if (!group) return;
+    const t = clock.getElapsedTime();
+
+    const roam = roamTarget(t, seed, roamRadius, 0);
+    const sep = applySeparation(roam.x, roam.z, robotKey, neighbors, delta);
+    const clamped = clampToAnnulus(sep.x, sep.z, roamRadius, 0);
+    group.position.set(clamped.x, baseY, clamped.z);
+    neighbors.set(robotKey, clamped);
+
+    const dx = clamped.x - prevPosRef.current.x;
+    const dz = clamped.z - prevPosRef.current.z;
+    if (Math.hypot(dx, dz) > 0.0005) {
+      group.rotation.y = Math.atan2(dx, dz);
+    }
+    prevPosRef.current = clamped;
+
+    animateModel(modelRefs, t, true);
+  });
+
+  return (
+    <group ref={groupRef} position={[0, baseY, 0]}>
+      <group ref={modelRefs.bodyRef}>
+        <AgentModel provider={provider} color={color} {...modelRefs} />
+      </group>
+
+      {/* Always golden -- never green/gray, since this character was
+          never online or offline to begin with (docs/BRIDGE.md "Agent
+          gallery"). */}
+      <mesh position={[0, topYFor(provider) + 0.14, 0]}>
+        <sphereGeometry args={[0.06, 12, 12]} />
+        <meshStandardMaterial color={SHOWCASE_RING_COLOR} emissive={SHOWCASE_RING_COLOR} emissiveIntensity={1.4} />
+      </mesh>
     </group>
   );
 }
