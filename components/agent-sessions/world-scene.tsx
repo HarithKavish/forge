@@ -17,7 +17,7 @@
  * scope and cannot run server-side).
  */
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createRef, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
@@ -127,16 +127,28 @@ function hashString(value: string): number {
   return (h >>> 0) / 4294967295;
 }
 
-/** Provider brand colors for the robots. `AgentProvider` only enumerates
- * claude/codex/gemini/other -- there's no `deepseek` value to key on, so a
- * provider like DeepSeek falls into `other` today rather than getting a
- * hardcoded (and incorrect) slot of its own. Keyed by provider, never by
+/**
+ * Every character the world can render -- the real `AgentProvider` values
+ * a linked session can actually carry, plus three that exist only in the
+ * Agent Gallery (docs/BRIDGE.md "Agent gallery"): DeepSeek, Perplexity and
+ * Grok are not in the `agent_sessions.provider` enum, and nothing here
+ * adds them to it -- there's no real session behind any of the three, so
+ * there's nothing for a database column to record yet. `AgentRobot` (real
+ * sessions) only ever supplies a genuine `AgentProvider`, a subset of
+ * this; `ShowcaseRobot` (the gallery) can supply any of it.
+ */
+type ShowcaseCharacterId = AgentProvider | "deepseek" | "perplexity" | "grok";
+
+/** Provider brand colors for the robots. Keyed by provider, never by
  * person, so this never needs per-user color logic. */
-const PROVIDER_COLORS: Record<AgentProvider, string> = {
+const PROVIDER_COLORS: Record<ShowcaseCharacterId, string> = {
   claude: "#d97757",
-  codex: "#e8e8e8",
+  codex: "#6f7fe0",
   gemini: "#4c8df6",
   other: "#8e6fd6",
+  deepseek: "#3d5fe0",
+  perplexity: "#1f8a93",
+  grok: "#5b6470",
 };
 
 export function WorldScene({
@@ -172,7 +184,7 @@ export function WorldScene({
 
       <SkyDome />
       <Mountains />
-      <Landscape />
+      <Landscape extraFlatten={{ x: SHOWCASE_ISLAND_POSITION[0], z: SHOWCASE_ISLAND_POSITION[1], radius: SHOWCASE_ISLAND_RADIUS + 2 }} />
       <Trees
         excludeRadius={HEX_SIZE * (Math.sqrt(groups.length + 2) + 1)}
         extraExclude={{ x: SHOWCASE_ISLAND_POSITION[0], z: SHOWCASE_ISLAND_POSITION[1], radius: SHOWCASE_ISLAND_RADIUS }}
@@ -227,7 +239,7 @@ export function WorldScene({
 /** The ground itself -- a real (if low-poly) landscape: a displaced plane
  * with rolling hills, not a flat void. The neon grid (GridFloor) hovers a
  * hair above it like a highway overlay, rather than being the ground. */
-function Landscape() {
+function Landscape({ extraFlatten }: { extraFlatten?: { x: number; z: number; radius: number } }) {
   const geometry = useMemo(() => {
     const segments = 90;
     const geo = new THREE.PlaneGeometry(TERRAIN_RADIUS * 2, TERRAIN_RADIUS * 2, segments, segments);
@@ -244,11 +256,20 @@ function Landscape() {
         Math.sin(x * 0.12 + 4.1) * Math.sin(y * 0.09) * 0.7;
       const centerFlatten = Math.min(1, Math.max(0, (distance - 18) / 30));
       const edgeFade = 1 - Math.min(1, Math.max(0, (distance - TERRAIN_RADIUS * 0.7) / (TERRAIN_RADIUS * 0.3)));
-      position.setZ(i, hills * centerFlatten * edgeFade * 1.4);
+      // A second, independent flattening well around the showcase island --
+      // without it, the terrain's own hills can rise right through a
+      // platform sitting away from the origin (the island's fixed position
+      // happened to land on high ground, which read as "half sunk").
+      let islandFlatten = 1;
+      if (extraFlatten) {
+        const idist = Math.hypot(x - extraFlatten.x, y - extraFlatten.z);
+        islandFlatten = Math.min(1, Math.max(0, (idist - extraFlatten.radius) / 8));
+      }
+      position.setZ(i, hills * centerFlatten * edgeFade * islandFlatten * 1.4);
     }
     geo.computeVertexNormals();
     return geo;
-  }, []);
+  }, [extraFlatten]);
 
   return (
     <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]} receiveShadow={false}>
@@ -631,10 +652,14 @@ type RobotState = "OFFLINE_DOCKED" | "WALKING_OUT" | "ONLINE_WALKING" | "WALKING
 const TRANSITION_SECONDS = 1.3;
 const LEG_SPEED = 8;
 /** How close two robots on the same platform can get before they start
- * steering apart (docs/BRIDGE.md "Agent gallery" -- "go around each other
- * without bumping"). */
-const SEPARATION_RADIUS = 0.55;
+ * steering apart, and the hard floor under that steering that guarantees
+ * they never actually overlap (docs/BRIDGE.md "Agent gallery": "they must
+ * occupy a certain area... not hit or pass through each other"). The hard
+ * floor is deliberately smaller -- it's a last-resort correction, not the
+ * everyday behavior. */
+const SEPARATION_RADIUS = 0.6;
 const SEPARATION_FORCE = 3.5;
+const MIN_SEPARATION = 0.34;
 
 function smoothstep(t: number): number {
   const c = Math.min(1, Math.max(0, t));
@@ -661,22 +686,41 @@ function clampToAnnulus(x: number, z: number, outerRadius: number, innerRadius: 
   return { x, z };
 }
 
-/** A smooth, non-circular wandering path covering most of the platform --
- * two independent-frequency waves per axis, so it reads as organic
- * roaming rather than a small fixed-radius orbit. Clamped to stay within
- * `roamRadius` and clear of `excludeRadius` (a firepit, on project
- * platforms; 0 on the showcase island, which has none). */
+/** A wide, organic wandering path covering the platform's full usable
+ * area -- polar, not Cartesian: radius breathes between `excludeRadius`
+ * (the firepit's own occupied area, 0 where there isn't one) and
+ * `roamRadius`, while angle drifts continuously, so the path genuinely
+ * crosses the middle. The previous version summed two independent
+ * Cartesian sine waves per axis, which reaches its corners more often
+ * than its center and then gets clamped straight back onto the rim there
+ * -- that clamping was the actual cause of robots visibly "just
+ * revolving around the border."
+ *
+ * Both the radial breathing rate and the angular speed/direction are
+ * derived from `seed` rather than shared constants, so every robot moves
+ * at a visibly different pace, and roughly half the time a different
+ * rotational direction, instead of the whole platform reading as one
+ * synchronized merry-go-round (docs/BRIDGE.md "Agent gallery": "all the
+ * agents should move in random directions, not follow or around each
+ * other"). */
 function roamTarget(t: number, seed: number, roamRadius: number, excludeRadius: number): { x: number; z: number } {
-  const x =
-    Math.sin(t * 0.17 + seed) * roamRadius * 0.55 + Math.sin(t * 0.09 + seed * 1.7) * roamRadius * 0.45;
-  const z =
-    Math.cos(t * 0.13 + seed * 1.3) * roamRadius * 0.55 + Math.cos(t * 0.21 + seed * 0.6) * roamRadius * 0.45;
-  return clampToAnnulus(x, z, roamRadius, excludeRadius);
+  const radiusSpeed = 0.045 + pseudoRandom(seed * 3.1 + 10) * 0.05;
+  const angularSpeed = 0.04 + pseudoRandom(seed * 7.7 + 20) * 0.07;
+  const direction = pseudoRandom(seed * 5.3 + 30) < 0.5 ? -1 : 1;
+  const phase = seed * 20;
+
+  const radiusPhase = Math.sin(t * radiusSpeed + phase) * 0.5 + 0.5;
+  const r = excludeRadius + radiusPhase * Math.max(0, roamRadius - excludeRadius);
+  const angle = direction * (t * angularSpeed + phase) + Math.sin(t * 0.025 + phase) * 0.9;
+
+  return { x: Math.cos(angle) * r, z: Math.sin(angle) * r };
 }
 
-/** Lightweight pairwise separation ("boids"-lite, not pathfinding): nudges
- * (x, z) away from every neighbor closer than SEPARATION_RADIUS, scaled by
- * frame time so it reads as smooth steering rather than a jitter. */
+/** Gentle pairwise steering ("boids"-lite, not pathfinding): nudges (x, z)
+ * away from every neighbor closer than SEPARATION_RADIUS, scaled by frame
+ * time so it reads as smooth avoidance rather than a jitter. This alone
+ * is a statistical nudge, not a guarantee -- see `resolveOverlap` for the
+ * hard floor underneath it. */
 function applySeparation(
   x: number,
   z: number,
@@ -700,16 +744,62 @@ function applySeparation(
   return { x: x + dx * SEPARATION_FORCE * delta, z: z + dz * SEPARATION_FORCE * delta };
 }
 
+/** The hard floor under `applySeparation`: if (x, z) still overlaps a
+ * neighbor's last-known position by more than `minSeparation`, it's
+ * repositioned to exactly that distance away, immediately -- not eased
+ * in. This is what actually guarantees no visible pass-through even when
+ * two robots' independent roam paths cross quickly; the soft steering
+ * above only makes that case rarer, it can't rule it out on its own. */
+function resolveOverlap(
+  x: number,
+  z: number,
+  selfKey: string,
+  neighbors: NeighborMap,
+  minSeparation: number,
+): { x: number; z: number } {
+  let px = x;
+  let pz = z;
+  for (const [key, pos] of neighbors) {
+    if (key === selfKey) continue;
+    const dx = px - pos.x;
+    const dz = pz - pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < minSeparation) {
+      const angle = dist > 0.0001 ? Math.atan2(dz, dx) : Math.atan2(pz, px) || 0;
+      px = pos.x + Math.cos(angle) * minSeparation;
+      pz = pos.z + Math.sin(angle) * minSeparation;
+    }
+  }
+  return { x: px, z: pz };
+}
+
 /** Total height of the humanoid fallback model's head-top, and of the
  * Claude bot model's head-top -- used to place each model's own status
  * sphere at a sensible height above whichever body is actually rendered. */
 const HUMANOID_TOP_Y = 0.54;
 const CLAUDE_BOT_TOP_Y = 0.32;
 const GEMINI_TOP_Y = 0.5;
+const CODEX_TOP_Y = 0.36;
+const DEEPSEEK_TOP_Y = 0.38;
+const PERPLEXITY_TOP_Y = 0.29;
+const GROK_TOP_Y = 0.27;
 /** The rest angle Gemini's two arms are held out from the body at --
  * combined with a swing on top while walking, in the same place the
  * per-frame animation loop already updates leg rotation. */
 const GEMINI_ARM_BASE_ANGLE = Math.PI * 0.32;
+
+/**
+ * Rotates an unrotated `<torusGeometry arc={arc}>` (which sweeps from
+ * angle 0, its own arc centered at `arc / 2`) so that arc's center lands
+ * at -90 deg -- the bottom of the ring -- which reads as a smile or a
+ * closed happy eye when viewed face-on, rather than a frown. Shared by
+ * every model that has one (Gemini's mouth, Codex's eyes, Perplexity's
+ * mouth, DeepSeek's mouth) so the derivation only has to be gotten right
+ * once.
+ */
+function smileArcRotation(arc: number): number {
+  return -Math.PI / 2 - arc / 2;
+}
 
 /**
  * The generic per-provider fallback body: a small box humanoid. Used for
@@ -912,7 +1002,7 @@ function GeminiBotModel({
           (naturally at angle = arc/2 for an unrotated torus) lands at
           -90 deg -- the bottom of the ring, which curves upward like a
           smile rather than a frown. */}
-      <mesh position={[0, 0.24, 0.128]} rotation={[0, 0, -Math.PI / 2 - Math.PI * 0.275]}>
+      <mesh position={[0, 0.24, 0.128]} rotation={[0, 0, smileArcRotation(Math.PI * 0.55)]}>
         <torusGeometry args={[0.045, 0.007, 8, 20, Math.PI * 0.55]} />
         <meshStandardMaterial color="#14181c" roughness={0.6} />
       </mesh>
@@ -936,13 +1026,288 @@ function GeminiBotModel({
   );
 }
 
-/** Picks each provider's model and reports the height of its head-top, so
+/**
+ * Codex's mark: a rounded, purple-to-blue gradient cloud with a white
+ * ">_" terminal prompt on its face and two small closed happy eyes
+ * (docs/BRIDGE.md "Robot models"). Simpler than Gemini's build -- the
+ * reference is a generic rounded blob, not a distinctively-shaped
+ * silhouette, so a scaled sphere with a vertex-color gradient is enough
+ * rather than a custom Lathe profile.
+ */
+function CodexBotModel({ bodyGroupRef }: { bodyGroupRef: RefObject<THREE.Group | null> }) {
+  const bodyGeometry = useMemo(() => {
+    const geo = new THREE.SphereGeometry(0.17, 24, 18);
+    geo.scale(1, 0.88, 0.94);
+    const position = geo.attributes.position!;
+    const colors = new Float32Array(position.count * 3);
+    const top = new THREE.Color("#7c6ae0");
+    const bottom = new THREE.Color("#4c7bf0");
+    for (let i = 0; i < position.count; i += 1) {
+      const y = position.getY(i);
+      const t = THREE.MathUtils.clamp((y + 0.15) / 0.3, 0, 1);
+      const mixed = top.clone().lerp(bottom, 1 - t);
+      colors[i * 3] = mixed.r;
+      colors[i * 3 + 1] = mixed.g;
+      colors[i * 3 + 2] = mixed.b;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
+  const eyeArc = Math.PI * 0.75;
+
+  return (
+    <group ref={bodyGroupRef} position={[0, 0.19, 0]}>
+      <mesh geometry={bodyGeometry}>
+        <meshStandardMaterial vertexColors roughness={0.3} metalness={0.1} />
+      </mesh>
+
+      {/* Two small closed, happy eyes -- upward arcs, not dots. */}
+      <mesh position={[-0.06, 0.025, 0.145]} rotation={[0, 0, smileArcRotation(eyeArc)]}>
+        <torusGeometry args={[0.024, 0.006, 6, 12, eyeArc]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.5} />
+      </mesh>
+      <mesh position={[0.06, 0.025, 0.145]} rotation={[0, 0, smileArcRotation(eyeArc)]}>
+        <torusGeometry args={[0.024, 0.006, 6, 12, eyeArc]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.5} />
+      </mesh>
+
+      {/* The ">_" prompt glyph, sitting just below the eyes. */}
+      <mesh position={[-0.02, -0.055, 0.15]} rotation={[0, 0, Math.PI / 5]}>
+        <boxGeometry args={[0.045, 0.01, 0.008]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+      </mesh>
+      <mesh position={[-0.02, -0.075, 0.15]} rotation={[0, 0, -Math.PI / 5]}>
+        <boxGeometry args={[0.045, 0.01, 0.008]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+      </mesh>
+      <mesh position={[0.05, -0.09, 0.15]}>
+        <boxGeometry args={[0.05, 0.01, 0.008]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+      </mesh>
+    </group>
+  );
+}
+
+/**
+ * DeepSeek's mark: a smiling whale, floating clear of the ground rather
+ * than standing on legs -- it "walks" by flapping its tail up and down
+ * (`tailRef`), and the shared walk-bob every model already gets from
+ * `bodyRef` reads as the body rising and dipping with each tail stroke
+ * (docs/BRIDGE.md "Robot models").
+ */
+function DeepSeekWhaleModel({
+  tailRef,
+  bodyGroupRef,
+}: {
+  tailRef: RefObject<THREE.Object3D | null>;
+  bodyGroupRef: RefObject<THREE.Group | null>;
+}) {
+  const mouthArc = Math.PI * 0.5;
+
+  return (
+    <group ref={bodyGroupRef} position={[0, 0.22, 0]}>
+      {/* Body -- elongated along Z (front-to-back). */}
+      <mesh scale={[0.85, 0.85, 1.35]}>
+        <sphereGeometry args={[0.16, 20, 16]} />
+        <meshStandardMaterial color="#3d5fe0" roughness={0.35} metalness={0.1} />
+      </mesh>
+
+      {/* A lighter belly patch, for a bit of shape read. */}
+      <mesh position={[0, -0.08, 0.02]} scale={[0.7, 0.5, 1.1]}>
+        <sphereGeometry args={[0.15, 16, 12]} />
+        <meshStandardMaterial color="#eaf3ff" roughness={0.6} />
+      </mesh>
+
+      {/* Eye + smile on the "face" end. */}
+      <mesh position={[-0.06, 0.06, 0.18]}>
+        <sphereGeometry args={[0.016, 8, 8]} />
+        <meshStandardMaterial color="#10141c" roughness={0.6} />
+      </mesh>
+      <mesh position={[-0.06, 0.01, 0.185]} rotation={[0, 0, smileArcRotation(mouthArc)]}>
+        <torusGeometry args={[0.026, 0.005, 6, 12, mouthArc]} />
+        <meshStandardMaterial color="#10141c" roughness={0.6} />
+      </mesh>
+
+      {/* Tail -- wide and flat (a simplified two-fluke silhouette),
+          pivoting at the body's rear for the up/down flap. */}
+      <group ref={tailRef} position={[0, 0, -0.19]}>
+        <mesh position={[0, 0, -0.09]} rotation={[Math.PI / 2, 0, 0]} scale={[1.7, 1, 0.35]}>
+          <coneGeometry args={[0.13, 0.15, 3]} />
+          <meshStandardMaterial color="#3d5fe0" roughness={0.35} metalness={0.1} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/**
+ * Perplexity's mark: an eight-bladed rotor that spins continuously
+ * (`spinRef`) like a rotor or turning pages, with a small hub in front
+ * that stays forward-facing -- the face would spin nonsensically if it
+ * were part of the same group as the blades, so it's a sibling instead.
+ */
+function PerplexityBotModel({ spinRef }: { spinRef: RefObject<THREE.Object3D | null> }) {
+  const blades = useMemo(() => Array.from({ length: 8 }, (_, i) => (i / 8) * Math.PI * 2), []);
+  const mouthArc = Math.PI * 0.5;
+
+  return (
+    <group position={[0, 0.18, 0]}>
+      <group ref={spinRef}>
+        {blades.map((angle) => (
+          <mesh key={angle} rotation={[0, 0, angle]} position={[Math.cos(angle) * 0.07, Math.sin(angle) * 0.07, 0]}>
+            <boxGeometry args={[0.1, 0.032, 0.02]} />
+            <meshStandardMaterial color="#1f8a93" roughness={0.4} metalness={0.1} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Static hub + face. */}
+      <mesh position={[0, 0, 0.02]}>
+        <sphereGeometry args={[0.05, 16, 12]} />
+        <meshStandardMaterial color="#166770" roughness={0.4} />
+      </mesh>
+      <mesh position={[-0.018, 0.012, 0.068]}>
+        <sphereGeometry args={[0.008, 8, 8]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.6} />
+      </mesh>
+      <mesh position={[0.018, 0.012, 0.068]}>
+        <sphereGeometry args={[0.008, 8, 8]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.6} />
+      </mesh>
+      <mesh position={[0, -0.014, 0.066]} rotation={[0, 0, smileArcRotation(mouthArc)]}>
+        <torusGeometry args={[0.018, 0.004, 6, 12, mouthArc]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+type GrokShapeKind = "cloud4" | "cloud3" | "sphere" | "pill";
+
+/** Eight simple shapes, one per reference icon -- the exact silhouettes
+ * don't need to be pixel-faithful; the point is eight visibly distinct
+ * blobs sharing the same two-eye face, cycled through one at a time
+ * (docs/BRIDGE.md "Robot models"). */
+const GROK_SHAPES: { color: string; kind: GrokShapeKind }[] = [
+  { color: "#3a3f47", kind: "cloud4" },
+  { color: "#3f6bd8", kind: "sphere" },
+  { color: "#e08a2e", kind: "sphere" },
+  { color: "#2f9b96", kind: "cloud4" },
+  { color: "#e0542e", kind: "cloud4" },
+  { color: "#8a5a3a", kind: "pill" },
+  { color: "#8a8f96", kind: "cloud3" },
+  { color: "#f2ece0", kind: "pill" },
+];
+
+function GrokShape({ kind, color }: { kind: GrokShapeKind; color: string }) {
+  const bodyMaterial = <meshStandardMaterial color={color} roughness={0.4} metalness={0.05} />;
+  const eyeMaterial = <meshStandardMaterial color="#ffffff" roughness={0.5} />;
+
+  return (
+    <>
+      {kind === "cloud4" ? (
+        <>
+          <mesh position={[-0.06, 0.03, 0]}>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+          <mesh position={[0.06, 0.03, 0]}>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+          <mesh position={[-0.04, -0.04, 0]}>
+            <sphereGeometry args={[0.075, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+          <mesh position={[0.04, -0.04, 0]}>
+            <sphereGeometry args={[0.075, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+        </>
+      ) : null}
+      {kind === "cloud3" ? (
+        <>
+          <mesh position={[0, 0.05, 0]}>
+            <sphereGeometry args={[0.075, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+          <mesh position={[-0.06, -0.04, 0]}>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+          <mesh position={[0.06, -0.04, 0]}>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            {bodyMaterial}
+          </mesh>
+        </>
+      ) : null}
+      {kind === "sphere" ? (
+        <mesh>
+          <sphereGeometry args={[0.11, 16, 14]} />
+          {bodyMaterial}
+        </mesh>
+      ) : null}
+      {kind === "pill" ? (
+        <mesh scale={[1.4, 0.85, 0.85]}>
+          <sphereGeometry args={[0.1, 16, 14]} />
+          {bodyMaterial}
+        </mesh>
+      ) : null}
+
+      {/* The two simple rounded eyes every shape in the reference shares. */}
+      <mesh position={[-0.035, 0, 0.095]}>
+        <boxGeometry args={[0.022, 0.05, 0.01]} />
+        {eyeMaterial}
+      </mesh>
+      <mesh position={[0.035, 0, 0.095]}>
+        <boxGeometry args={[0.022, 0.05, 0.01]} />
+        {eyeMaterial}
+      </mesh>
+    </>
+  );
+}
+
+/**
+ * Grok's mark: eight distinct characters occupying one "slot," never
+ * blended -- all eight render, but only the active one is visible, and
+ * `ShowcaseRobot` flips which one that is once per bob cycle (right as
+ * it's about to rise), per `shapeRefs`. Growing/shrinking with the same
+ * cycle ("breathing") is `breatheRef`, driven generically by
+ * `animateModel`.
+ */
+function GrokBotModel({
+  shapeRefs,
+  breatheRef,
+}: {
+  shapeRefs: RefObject<THREE.Object3D | null>[];
+  breatheRef: RefObject<THREE.Group | null>;
+}) {
+  return (
+    <group ref={breatheRef} position={[0, 0.16, 0]}>
+      {GROK_SHAPES.map((shape, i) => (
+        <group key={shape.color + shape.kind} ref={shapeRefs[i]} visible={i === 0}>
+          <GrokShape kind={shape.kind} color={shape.color} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Picks each character's model and reports the height of its head-top, so
  * callers (AgentRobot, ShowcaseRobot) share one place that knows which
  * model goes with which provider (docs/BRIDGE.md "Robot models") instead
- * of duplicating the switch. */
-function topYFor(provider: AgentProvider): number {
+ * of duplicating the switch. Grok isn't here -- its eight-shape cycling
+ * needs its own dedicated ref array, so `ShowcaseRobot` renders
+ * `GrokBotModel` directly rather than going through `AgentModel`. */
+function topYFor(provider: ShowcaseCharacterId): number {
   if (provider === "claude") return CLAUDE_BOT_TOP_Y;
   if (provider === "gemini") return GEMINI_TOP_Y;
+  if (provider === "codex") return CODEX_TOP_Y;
+  if (provider === "deepseek") return DEEPSEEK_TOP_Y;
+  if (provider === "perplexity") return PERPLEXITY_TOP_Y;
+  if (provider === "grok") return GROK_TOP_Y;
   return HUMANOID_TOP_Y;
 }
 
@@ -956,8 +1321,10 @@ function AgentModel({
   leftArmRef,
   rightArmRef,
   bodyGroupRef,
+  tailRef,
+  spinRef,
 }: {
-  provider: AgentProvider;
+  provider: Exclude<ShowcaseCharacterId, "grok">;
   color: string;
   leftLegRef: RefObject<THREE.Object3D | null>;
   rightLegRef: RefObject<THREE.Object3D | null>;
@@ -966,6 +1333,8 @@ function AgentModel({
   leftArmRef: RefObject<THREE.Object3D | null>;
   rightArmRef: RefObject<THREE.Object3D | null>;
   bodyGroupRef: RefObject<THREE.Group | null>;
+  tailRef: RefObject<THREE.Object3D | null>;
+  spinRef: RefObject<THREE.Object3D | null>;
 }) {
   if (provider === "claude") {
     return (
@@ -974,6 +1343,15 @@ function AgentModel({
   }
   if (provider === "gemini") {
     return <GeminiBotModel leftArmRef={leftArmRef} rightArmRef={rightArmRef} bodyGroupRef={bodyGroupRef} />;
+  }
+  if (provider === "codex") {
+    return <CodexBotModel bodyGroupRef={bodyGroupRef} />;
+  }
+  if (provider === "deepseek") {
+    return <DeepSeekWhaleModel tailRef={tailRef} bodyGroupRef={bodyGroupRef} />;
+  }
+  if (provider === "perplexity") {
+    return <PerplexityBotModel spinRef={spinRef} />;
   }
   return <HumanoidModel color={color} leftLegRef={leftLegRef} rightLegRef={rightLegRef} />;
 }
@@ -991,11 +1369,27 @@ function useModelRefs() {
   const leftArmRef = useRef<THREE.Object3D>(null);
   const rightArmRef = useRef<THREE.Object3D>(null);
   const bodyGroupRef = useRef<THREE.Group>(null);
-  return { bodyRef, leftLegRef, rightLegRef, leftEarRef, rightEarRef, leftArmRef, rightArmRef, bodyGroupRef };
+  const tailRef = useRef<THREE.Object3D>(null);
+  const spinRef = useRef<THREE.Object3D>(null);
+  const breatheRef = useRef<THREE.Group>(null);
+  return {
+    bodyRef,
+    leftLegRef,
+    rightLegRef,
+    leftEarRef,
+    rightEarRef,
+    leftArmRef,
+    rightArmRef,
+    bodyGroupRef,
+    tailRef,
+    spinRef,
+    breatheRef,
+  };
 }
 
 function animateModel(refs: ReturnType<typeof useModelRefs>, t: number, walking: boolean): void {
-  const { bodyRef, leftLegRef, rightLegRef, leftEarRef, rightEarRef, leftArmRef, rightArmRef, bodyGroupRef } = refs;
+  const { bodyRef, leftLegRef, rightLegRef, leftEarRef, rightEarRef, leftArmRef, rightArmRef, bodyGroupRef, tailRef, spinRef, breatheRef } =
+    refs;
   if (bodyRef.current) {
     bodyRef.current.position.y = walking ? Math.abs(Math.sin(t * LEG_SPEED)) * 0.04 : 0;
   }
@@ -1010,6 +1404,24 @@ function animateModel(refs: ReturnType<typeof useModelRefs>, t: number, walking:
   if (bodyGroupRef.current) {
     const squash = walking ? Math.sin(t * LEG_SPEED) * 0.09 : 0;
     bodyGroupRef.current.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
+  }
+  // DeepSeek's tail -- flaps in the same phase as a humanoid's legs would,
+  // and the whole body's existing walk-bob (bodyRef, above) already
+  // reads as "moves up and down as the tail strokes" since both run off
+  // the same `sin(t * LEG_SPEED)` phase.
+  if (tailRef.current) {
+    tailRef.current.rotation.x = walking ? Math.sin(t * LEG_SPEED) * 0.55 : 0;
+  }
+  // Perplexity's rotor -- spins continuously, independent of whether it's
+  // currently walking; a rotor that stops spinning when parked would
+  // read as broken, not idle.
+  if (spinRef.current) {
+    spinRef.current.rotation.z = t * 2.2;
+  }
+  // A generic uniform "breathing" pulse (Grok) -- distinct from Gemini's
+  // anisotropic squash/stretch above.
+  if (breatheRef.current) {
+    breatheRef.current.scale.setScalar(walking ? 1 + Math.sin(t * LEG_SPEED) * 0.12 : 1);
   }
 }
 
@@ -1104,7 +1516,8 @@ function AgentRobot({
       walking = true;
       const roam = roamTarget(t, seed, roamRadius, excludeRadius);
       const sep = applySeparation(roam.x, roam.z, robotKey, neighbors, delta);
-      const clamped = clampToAnnulus(sep.x, sep.z, roamRadius, excludeRadius);
+      const hard = resolveOverlap(sep.x, sep.z, robotKey, neighbors, MIN_SEPARATION);
+      const clamped = clampToAnnulus(hard.x, hard.z, roamRadius, excludeRadius);
       px = clamped.x;
       pz = clamped.z;
     } else {
@@ -1127,8 +1540,10 @@ function AgentRobot({
       pz = fromZ + (targetZ - fromZ) * progress;
       if (state === "WALKING_OUT") {
         const sep = applySeparation(px, pz, robotKey, neighbors, delta);
-        px = sep.x;
-        pz = sep.z;
+        const hard = resolveOverlap(sep.x, sep.z, robotKey, neighbors, MIN_SEPARATION);
+        const clamped = clampToAnnulus(hard.x, hard.z, roamRadius, excludeRadius);
+        px = clamped.x;
+        pz = clamped.z;
       }
 
       if (progress >= 1) {
@@ -1200,12 +1615,18 @@ const SHOWCASE_ISLAND_POSITION: [number, number] = [HEX_SIZE * 14, 0];
 const SHOWCASE_ISLAND_RADIUS = PLATFORM_RADIUS + 2.5;
 const SHOWCASE_RING_COLOR = "#e8b84b";
 
-/** One character per agent provider that has its own model so far
- * (docs/BRIDGE.md "Agent gallery") -- added to as each provider gets a
- * real model built, not tied to any project or real session. */
-const SHOWCASE_CHARACTERS: { provider: AgentProvider; key: string }[] = [
+/** One character per agent that has its own model so far (docs/BRIDGE.md
+ * "Agent gallery") -- added to as each one gets a real model built, not
+ * tied to any project or real session. DeepSeek, Perplexity and Grok live
+ * only here (see `ShowcaseCharacterId`); Claude, Codex and Gemini also
+ * appear as real project robots when a real session uses that provider. */
+const SHOWCASE_CHARACTERS: { provider: ShowcaseCharacterId; key: string }[] = [
   { provider: "claude", key: "showcase-claude" },
   { provider: "gemini", key: "showcase-gemini" },
+  { provider: "codex", key: "showcase-codex" },
+  { provider: "deepseek", key: "showcase-deepseek" },
+  { provider: "perplexity", key: "showcase-perplexity" },
+  { provider: "grok", key: "showcase-grok" },
 ];
 
 /**
@@ -1226,6 +1647,10 @@ function DisplayIsland() {
   const [x, z] = SHOWCASE_ISLAND_POSITION;
   const neighborsRef = useRef<NeighborMap>(new Map());
   const roamRadius = PLATFORM_RADIUS - 0.5;
+  // The firepit at the center occupies real area too, exactly like on a
+  // project platform -- characters roam clear of it, not just visually
+  // avoid overlapping its flame.
+  const excludeRadius = 1.0;
 
   return (
     <group position={[x, 0, z]}>
@@ -1243,6 +1668,8 @@ function DisplayIsland() {
         Agent Gallery
       </Text>
 
+      <Firepit />
+
       {SHOWCASE_CHARACTERS.map((character) => (
         <ShowcaseRobot
           key={character.key}
@@ -1250,6 +1677,7 @@ function DisplayIsland() {
           provider={character.provider}
           baseY={PLATFORM_HEIGHT}
           roamRadius={roamRadius}
+          excludeRadius={excludeRadius}
           seed={hashString(character.key)}
           neighbors={neighborsRef.current}
         />
@@ -1268,13 +1696,15 @@ function ShowcaseRobot({
   provider,
   baseY,
   roamRadius,
+  excludeRadius,
   seed,
   neighbors,
 }: {
   robotKey: string;
-  provider: AgentProvider;
+  provider: ShowcaseCharacterId;
   baseY: number;
   roamRadius: number;
+  excludeRadius: number;
   seed: number;
   neighbors: NeighborMap;
 }) {
@@ -1282,6 +1712,14 @@ function ShowcaseRobot({
   const modelRefs = useModelRefs();
   const prevPosRef = useRef({ x: 0, z: 0 });
   const color = PROVIDER_COLORS[provider];
+  const isGrok = provider === "grok";
+
+  // Grok only: eight candidate shapes, one visible at a time -- its own
+  // dedicated ref array (useModelRefs' fixed shape doesn't fit "one ref
+  // per shape"), and the bob-cycle bookkeeping that decides when to swap.
+  const grokShapeRefs = useMemo(() => (isGrok ? GROK_SHAPES.map(() => createRef<THREE.Object3D>()) : []), [isGrok]);
+  const grokCycleRef = useRef(-1);
+  const grokIndexRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -1294,9 +1732,10 @@ function ShowcaseRobot({
     if (!group) return;
     const t = clock.getElapsedTime();
 
-    const roam = roamTarget(t, seed, roamRadius, 0);
+    const roam = roamTarget(t, seed, roamRadius, excludeRadius);
     const sep = applySeparation(roam.x, roam.z, robotKey, neighbors, delta);
-    const clamped = clampToAnnulus(sep.x, sep.z, roamRadius, 0);
+    const hard = resolveOverlap(sep.x, sep.z, robotKey, neighbors, MIN_SEPARATION);
+    const clamped = clampToAnnulus(hard.x, hard.z, roamRadius, excludeRadius);
     group.position.set(clamped.x, baseY, clamped.z);
     neighbors.set(robotKey, clamped);
 
@@ -1308,12 +1747,33 @@ function ShowcaseRobot({
     prevPosRef.current = clamped;
 
     animateModel(modelRefs, t, true);
+
+    // Swap which of the eight shapes is visible once per bob cycle, right
+    // as the body is about to rise off its trough -- "while it is going
+    // to go up, it must change to another character."
+    if (isGrok) {
+      const cycle = Math.floor((t * LEG_SPEED) / Math.PI);
+      if (cycle !== grokCycleRef.current) {
+        grokCycleRef.current = cycle;
+        const prevIndex = grokIndexRef.current;
+        const nextIndex = (prevIndex + 1) % GROK_SHAPES.length;
+        grokIndexRef.current = nextIndex;
+        const prevObj = grokShapeRefs[prevIndex]?.current;
+        const nextObj = grokShapeRefs[nextIndex]?.current;
+        if (prevObj) prevObj.visible = false;
+        if (nextObj) nextObj.visible = true;
+      }
+    }
   });
 
   return (
     <group ref={groupRef} position={[0, baseY, 0]}>
       <group ref={modelRefs.bodyRef}>
-        <AgentModel provider={provider} color={color} {...modelRefs} />
+        {isGrok ? (
+          <GrokBotModel shapeRefs={grokShapeRefs} breatheRef={modelRefs.breatheRef} />
+        ) : (
+          <AgentModel provider={provider} color={color} {...modelRefs} />
+        )}
       </group>
 
       {/* Always golden -- never green/gray, since this character was
