@@ -208,7 +208,58 @@ offline to begin with. `ShowcaseRobot` reuses `AgentModel` and the same
 roam/separation math `AgentRobot` uses, just permanently in the roaming
 state (no dock, no offline state — there's no real session behind it to be
 offline). `SHOWCASE_CHARACTERS` is the roster: one entry per provider that
-has a real model built, added to as each one ships.
+has a real model built, added to as each one ships. `ShowcaseCharacterId`
+(`AgentProvider` plus `"deepseek" | "perplexity" | "grok"`) is deliberately
+*not* the same type as `AgentProvider` and never becomes a schema
+migration — DeepSeek, Perplexity and Grok have no real session behind them
+today, so there's nothing for a database column to record; they exist only
+as gallery characters until that changes. Claude, Codex and Gemini are
+real `AgentProvider` values already, so their models render identically
+whether the caller is `AgentRobot` (a real linked session) or
+`ShowcaseRobot` (the gallery) — the same `AgentModel` switch serves both.
+
+**Four more models.** Codex is a rounded gradient cloud (a vertex-colored
+sphere, the same per-vertex-gradient technique as Gemini and `SkyDome`)
+with a white ">_" glyph and two closed happy eyes; it's Codex's *real*
+model now, not just a gallery one, since `codex` was already a valid
+provider. DeepSeek is a whale that floats clear of the ground and
+"walks" by flapping its tail (`tailRef`) rather than standing on legs —
+the shared walk-bob every model already gets from `bodyRef` reads as the
+body rising and dipping with each stroke, for free. Perplexity is an
+eight-bladed rotor that spins continuously (`spinRef`, independent of
+whether it's currently walking — a parked rotor that stops spinning
+would read as broken) around a face that deliberately isn't part of the
+spinning group, so it stays forward-facing. Grok is eight distinct
+shapes (`GROK_SHAPES`) occupying one "slot" — all eight render, but only
+one is ever visible, and `ShowcaseRobot` flips which one once per walk-
+bob cycle, timed to the moment the body is about to rise off its trough
+("while it is going to go up, it must change"); a `breatheRef` on the
+same cycle scales the whole thing up and down uniformly, distinct from
+Gemini's anisotropic squash/stretch on its own `bodyGroupRef`.
+
+**Two fixes the gallery surfaced.** First, the platform's fixed position
+happened to land on a rise in `Landscape`'s procedural hills, which read
+as "half sunk into the ground" — `Landscape` now takes a second,
+independent `extraFlatten` well (radius centered on the island, not the
+origin) alongside its existing origin-centered one, the same shape of fix
+`Trees`' `extraExclude` already applied to keep a tree from spawning on
+top of it. Second, the original `roamTarget` summed two independent
+Cartesian sine waves per axis, which reaches the corners of its bounding
+square far more often than its center and then gets clamped straight
+back onto the platform's rim there — that clamping, not intent, was why
+characters visibly "just revolved around the border" while the middle
+sat empty. The rewritten version is polar instead: radius breathes
+between the exclusion well and the roam radius while angle drifts
+continuously, so the path genuinely crosses the middle. Both the radial
+breathing rate and the angular speed/direction are derived from each
+robot's own `seed` rather than a shared constant, so a platform with
+several robots doesn't read as one synchronized merry-go-round (which is
+also what made Claude look like it was "chasing" Gemini before). Real
+occupancy — "they must occupy a certain area... not hit or pass through
+each other" — is `resolveOverlap`: a hard floor under `applySeparation`'s
+gentler steering, applied after it and before the final
+`clampToAnnulus`, so the firepit's own exclusion radius stays the
+authoritative last word regardless of what separation just did.
 
 ## 9. Open questions
 
