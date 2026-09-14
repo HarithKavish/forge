@@ -161,6 +161,55 @@ another's dock, and independent of render order, so refresh/reconnect never
 reassigns it either. Dock count equals linked-session count always, online
 or not.
 
+## 8. Robot models and the agent gallery
+
+Every robot's *physical model* is chosen by `AgentModel` (`world-scene.tsx`),
+keyed on `AgentProvider` — never hardcoded to Claude, so a provider gaining
+its own model is a new branch there, not a rewrite:
+
+- `claude` → `ClaudeBotModel`, a voxel build of Claude's own mark (wide
+  flat head, two ear nubs, two eye slits, two leg-pair "feet").
+- `gemini` → `GeminiBotModel`, a `LatheGeometry` teardrop with a real
+  red→green→blue gradient baked in as per-vertex colors (the same
+  technique `SkyDome` uses for its sky), two dot eyes, a curved-torus
+  smile, and two capsule "hands". No legs — it "walks" by squashing and
+  stretching the whole body instead, driven by the same shared
+  `animateModel` helper every other model uses.
+- Every other provider → `HumanoidModel`, the original generic body, kept
+  as the fallback until each gets a model of its own.
+
+`topYFor(provider)` is the one place that knows how tall each model is, so
+the status sphere floats at a sensible height regardless of which model is
+actually rendered underneath it.
+
+**Roaming and separation.** A linked session's robot no longer orbits a
+small fixed circle while online — `roamTarget` traces a wide, non-circular
+path (two independent-frequency waves per axis) covering most of the
+platform, clamped clear of the firepit at the center. Every robot
+currently roaming a platform registers its live position in that
+platform's own `neighbors` map (a plain `Map`, mutated every frame, never
+React state); `applySeparation` reads it to steer each robot away from
+whichever neighbors are closer than `SEPARATION_RADIUS` — lightweight
+pairwise steering, not real pathfinding, but enough that robots visibly go
+around each other instead of overlapping. `WALKING_OUT`'s target is the
+*live* roam position, re-evaluated every frame and blended in via the
+existing transition's `progress`, so the handoff into `ONLINE_WALKING`
+never snaps even though the target itself never stops moving.
+
+**The Agent Gallery.** `DisplayIsland` is a fixed showcase platform,
+positioned well clear of the project-island cluster (`SHOWCASE_ISLAND_POSITION`,
+with `Trees` given a matching `extraExclude` so the scatter doesn't plant a
+tree on top of it) — not one project among others, and not something
+Worldview lets you create more of. Same dark platform body as a project
+island, but its ring glows gold (`SHOWCASE_RING_COLOR`) instead of blue,
+and every character standing on it carries a gold status sphere always —
+never green or gray, because a showcase character was never online or
+offline to begin with. `ShowcaseRobot` reuses `AgentModel` and the same
+roam/separation math `AgentRobot` uses, just permanently in the roaming
+state (no dock, no offline state — there's no real session behind it to be
+offline). `SHOWCASE_CHARACTERS` is the roster: one entry per provider that
+has a real model built, added to as each one ships.
+
 ## 9. Open questions
 
 - **Cross-machine resume** — deferred, see §5. Would need the `SessionStore`
