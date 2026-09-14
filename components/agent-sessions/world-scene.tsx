@@ -197,13 +197,20 @@ export function WorldScene({
       {SHOW_ADD_PLATFORM ? <AddPlatform position={positions[groups.length] ?? [0, 0]} onClick={onAddClick} /> : null}
 
       <OrbitControls
-        enablePan={false}
+        enablePan
+        // Panning slides across the ground plane itself, not the screen
+        // plane behind a tilted camera -- the natural feel for "drag to
+        // move across the world" rather than a subtle vertical drift.
+        screenSpacePanning={false}
+        // Hold-and-drag moves the view (pans) instead of orbiting the
+        // camera around a fixed point -- rotate is still available on the
+        // right mouse button / two-finger touch for anyone who wants it.
+        mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
+        touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
         minDistance={10}
         maxDistance={70}
         maxPolarAngle={Math.PI / 2.15}
         target={[0, 1, 0]}
-        autoRotate
-        autoRotateSpeed={0.35}
       />
 
       <EffectComposer>
