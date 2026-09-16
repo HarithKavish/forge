@@ -19,7 +19,7 @@
 
 import { createRef, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Text } from "@react-three/drei";
+import { OrbitControls, PerformanceMonitor, Text } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 
@@ -167,14 +167,38 @@ export function WorldScene({
   onProjectClick: (projectId: string) => void;
 }) {
   const positions = useMemo(() => layoutPositions(groups.length + 1), [groups.length]);
+  const firepitPositions = useMemo(() => {
+    const list: [number, number][] = groups.map((_, index) => positions[index] ?? [0, 0]);
+    list.push(SHOWCASE_ISLAND_POSITION);
+    return list;
+  }, [groups, positions]);
+
+  // Adaptive quality (docs/BRIDGE.md "Performance"): starts at a real but
+  // not excessive pixel ratio, and PerformanceMonitor (below, inside the
+  // Canvas) measures actual frame time and steps it down under sustained
+  // load -- a throttled laptop or a phone gets a lighter render
+  // automatically; a machine that can handle full quality never has it
+  // reduced. `bloomFallback` is the last resort if stepping dpr down to
+  // its floor still isn't enough.
+  const [dpr, setDpr] = useState(1.5);
+  const [bloomFallback, setBloomFallback] = useState(false);
 
   return (
     <Canvas
       shadows={false}
-      dpr={[1, 1.75]}
-      gl={{ antialias: true }}
+      dpr={dpr}
+      // Native MSAA is redundant here on top of Bloom's own downsample/
+      // blur passes, and doubly expensive combined with a >1x pixel
+      // ratio -- edges read close enough to clean without it.
+      gl={{ antialias: false }}
       camera={{ position: [0, 16, 24], fov: 50 }}
     >
+      <PerformanceMonitor
+        onDecline={() => setDpr((d) => Math.max(1, Math.round((d - 0.25) * 100) / 100))}
+        onIncline={() => setDpr((d) => Math.min(1.5, Math.round((d + 0.25) * 100) / 100))}
+        onFallback={() => setBloomFallback(true)}
+      />
+
       <color attach="background" args={["#bfe6f5"]} />
       <fog attach="fog" args={["#cdeaf7", 55, 150]} />
       <ambientLight intensity={0.75} color="#fff6e0" />
@@ -190,6 +214,7 @@ export function WorldScene({
         extraExclude={{ x: SHOWCASE_ISLAND_POSITION[0], z: SHOWCASE_ISLAND_POSITION[1], radius: SHOWCASE_ISLAND_RADIUS }}
       />
       <GridFloor />
+      <InstancedFirepits positions={firepitPositions} />
 
       {groups.map((group, index) => (
         <ProjectPlatform
@@ -225,13 +250,17 @@ export function WorldScene({
         target={[0, 1, 0]}
       />
 
-      <EffectComposer>
-        {/* Raised well above the old dark-scene value: the sky/ground are
-            bright now, so a low threshold would bloom the whole daytime
-            scene into a haze instead of picking out just the neon platform
-            glow the way it should. */}
-        <Bloom luminanceThreshold={0.92} luminanceSmoothing={0.4} intensity={1.1} radius={0.6} />
-      </EffectComposer>
+      {bloomFallback ? null : (
+        <EffectComposer>
+          {/* mipmapBlur: a much cheaper bloom implementation (a mip chain
+              instead of several full-resolution blur passes) with a
+              visually near-identical result -- see docs/BRIDGE.md
+              "Performance". Threshold stays well above the daytime sky/
+              ground brightness so only genuinely emissive surfaces (the
+              neon platform rings, the firepit flames) bloom. */}
+          <Bloom mipmapBlur luminanceThreshold={0.92} luminanceSmoothing={0.4} intensity={1.1} radius={0.6} />
+        </EffectComposer>
+      )}
     </Canvas>
   );
 }
@@ -279,10 +308,21 @@ function Landscape({ extraFlatten }: { extraFlatten?: { x: number; z: number; ra
 }
 
 /** A low-poly mountain range at the horizon -- just for depth and scale,
- * fading into fog rather than rendered in bloom-bright detail. */
+ * fading into fog rather than rendered in bloom-bright detail. Rendered as
+ * two shared InstancedMeshes (one per cone -- the body, the snow cap) for
+ * 2 draw calls total instead of 44 (22 peaks x 2 cones each): every peak
+ * reuses the same unit-sized cone geometry, with its own radius/height
+ * baked into that instance's transform matrix instead of its own
+ * geometry, and its alternating body color via `setColorAt`
+ * (docs/BRIDGE.md "Performance") -- entirely static, so this is a
+ * one-time `useEffect`, the same pattern `Trees` already uses. */
 function Mountains() {
+  const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const capRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const count = 22;
+
   const peaks = useMemo(() => {
-    const count = 22;
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2 + pseudoRandom(i) * 0.2;
       const distance = 85 + pseudoRandom(i + 50) * 25;
@@ -301,23 +341,46 @@ function Mountains() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!bodyRef.current || !capRef.current) return;
+    const bodyColorA = new THREE.Color("#9b8fae");
+    const bodyColorB = new THREE.Color("#a08a78");
+
+    peaks.forEach((peak, i) => {
+      dummy.position.set(...peak.position);
+      dummy.rotation.set(0, peak.rotation, 0);
+      dummy.scale.set(peak.radius, peak.height, peak.radius);
+      dummy.updateMatrix();
+      bodyRef.current!.setMatrixAt(i, dummy.matrix);
+      bodyRef.current!.setColorAt(i, i % 2 === 0 ? bodyColorA : bodyColorB);
+
+      // Snow cap -- a pure-Y local offset is unaffected by a rotation
+      // around Y, so the peak's own rotation doesn't need to be applied
+      // to the offset itself, only to the cap's own orientation.
+      dummy.position.set(peak.position[0], peak.position[1] + peak.height * 0.32, peak.position[2]);
+      dummy.scale.set(peak.radius * 0.42, peak.height * 0.4, peak.radius * 0.42);
+      dummy.updateMatrix();
+      capRef.current!.setMatrixAt(i, dummy.matrix);
+    });
+
+    bodyRef.current.instanceMatrix.needsUpdate = true;
+    if (bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate = true;
+    capRef.current.instanceMatrix.needsUpdate = true;
+  }, [peaks, dummy]);
+
   return (
     <group>
-      {peaks.map((peak, i) => (
-        <group key={i} position={peak.position} rotation={[0, peak.rotation, 0]}>
-          <mesh>
-            <coneGeometry args={[peak.radius, peak.height, 6]} />
-            <meshStandardMaterial color={i % 2 === 0 ? "#9b8fae" : "#a08a78"} roughness={1} fog />
-          </mesh>
-          {/* A smaller, lighter cone near the tip stands in for a snow cap --
-              cheap way to get the two-tone stylized-peak look from the
-              reference images without a custom gradient shader. */}
-          <mesh position={[0, peak.height * 0.32, 0]}>
-            <coneGeometry args={[peak.radius * 0.42, peak.height * 0.4, 6]} />
-            <meshStandardMaterial color="#f2eef0" roughness={0.9} fog />
-          </mesh>
-        </group>
-      ))}
+      <instancedMesh ref={bodyRef} args={[undefined, undefined, count]}>
+        <coneGeometry args={[1, 1, 6]} />
+        <meshStandardMaterial roughness={1} fog />
+      </instancedMesh>
+      {/* A smaller, lighter cone near the tip stands in for a snow cap --
+          cheap way to get the two-tone stylized-peak look from the
+          reference images without a custom gradient shader. */}
+      <instancedMesh ref={capRef} args={[undefined, undefined, count]}>
+        <coneGeometry args={[1, 1, 6]} />
+        <meshStandardMaterial color="#f2eef0" roughness={0.9} fog />
+      </instancedMesh>
     </group>
   );
 }
@@ -510,37 +573,94 @@ function HexPlatformBase({
   );
 }
 
-/** A firepit at the center of every project platform -- purely atmospheric,
- * no data attached to it. Two overlapping cones scaled/rotated per-frame
- * with offset sine waves stand in for a waving flame without a shader. */
-function Firepit() {
-  const flameRef = useRef<THREE.Group>(null);
+/**
+ * Every platform's firepit -- stone base plus two overlapping flame
+ * cones, scaled/rotated per-frame with offset sine waves -- rendered as
+ * three shared `InstancedMesh`es across *every* platform at once (3 draw
+ * calls total, not 3 per platform), instead of one real `<Firepit>`
+ * component per platform. That older version also gave each platform its
+ * own real-time `THREE.PointLight`; with dozens of platforms, that was
+ * dozens of dynamic lights, and three.js's standard forward renderer
+ * makes every light cost something on *every* lit surface in the scene,
+ * not just nearby ones -- almost certainly the single largest reason
+ * Worldview was unusable on a throttled laptop or a phone (docs/BRIDGE.md
+ * "Performance"). There is no light here at all now: the glow still reads
+ * from each flame's own emissive material plus Bloom, same as before --
+ * the one real, disclosed loss is the very faint warm wash a point light
+ * used to cast on the platform surface immediately around it.
+ *
+ * A small per-instance phase offset (from each platform's own position,
+ * hashed) keeps every fire from flickering in perfect unison, which
+ * reads as more natural than the old version's fully-synced flicker did.
+ */
+function InstancedFirepits({ positions }: { positions: [number, number][] }) {
+  const stoneRef = useRef<THREE.InstancedMesh>(null);
+  const outerFlameRef = useRef<THREE.InstancedMesh>(null);
+  const innerFlameRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const count = positions.length;
+
+  useEffect(() => {
+    if (!stoneRef.current) return;
+    positions.forEach(([x, z], i) => {
+      dummy.position.set(x, PLATFORM_HEIGHT + 0.08, z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      stoneRef.current!.setMatrixAt(i, dummy.matrix);
+    });
+    stoneRef.current.instanceMatrix.needsUpdate = true;
+  }, [positions, dummy]);
 
   useFrame(({ clock }) => {
-    if (!flameRef.current) return;
+    const outer = outerFlameRef.current;
+    const inner = innerFlameRef.current;
+    if (!outer || !inner) return;
     const t = clock.getElapsedTime();
-    flameRef.current.scale.set(1 + Math.sin(t * 6) * 0.1, 1 + Math.sin(t * 5.3 + 1) * 0.18, 1 + Math.cos(t * 6.7) * 0.1);
-    flameRef.current.rotation.y = Math.sin(t * 1.3) * 0.35;
+
+    positions.forEach(([x, z], i) => {
+      const phase = pseudoRandom(i * 3.7) * Math.PI * 2;
+      const groupY = PLATFORM_HEIGHT + 0.28;
+      const rotY = Math.sin(t * 1.3 + phase) * 0.35;
+      const sx = 1 + Math.sin(t * 6 + phase) * 0.1;
+      const sy = 1 + Math.sin(t * 5.3 + phase + 1) * 0.18;
+      const sz = 1 + Math.cos(t * 6.7 + phase) * 0.1;
+
+      dummy.position.set(x, groupY, z);
+      dummy.rotation.set(0, rotY, 0);
+      dummy.scale.set(sx, sy, sz);
+      dummy.updateMatrix();
+      outer.setMatrixAt(i, dummy.matrix);
+
+      // The inner cone matches the original's nested transform (a child
+      // positioned +0.16 and scaled 0.6/0.65/0.6 relative to the outer
+      // group), flattened into its own world-space matrix since two
+      // separate InstancedMeshes can't parent one to the other.
+      dummy.position.set(x, groupY + 0.16 * sy, z);
+      dummy.scale.set(sx * 0.6, sy * 0.65, sz * 0.6);
+      dummy.updateMatrix();
+      inner.setMatrixAt(i, dummy.matrix);
+    });
+
+    outer.instanceMatrix.needsUpdate = true;
+    inner.instanceMatrix.needsUpdate = true;
   });
 
   return (
-    <group position={[0, PLATFORM_HEIGHT, 0]}>
-      <mesh position={[0, 0.08, 0]}>
+    <>
+      <instancedMesh ref={stoneRef} args={[undefined, undefined, count]}>
         <cylinderGeometry args={[0.5, 0.62, 0.16, 10]} />
         <meshStandardMaterial color="#463a30" roughness={1} />
-      </mesh>
-      <group ref={flameRef} position={[0, 0.28, 0]}>
-        <mesh>
-          <coneGeometry args={[0.26, 0.68, 8]} />
-          <meshStandardMaterial color="#2f8fe0" emissive="#3fa9ff" emissiveIntensity={2.6} transparent opacity={0.88} />
-        </mesh>
-        <mesh position={[0, 0.16, 0]} scale={[0.6, 0.65, 0.6]}>
-          <coneGeometry args={[0.26, 0.68, 8]} />
-          <meshStandardMaterial color="#bfe8ff" emissive="#dff3ff" emissiveIntensity={3.2} transparent opacity={0.85} />
-        </mesh>
-      </group>
-      <pointLight position={[0, 0.6, 0]} color="#3fa9ff" intensity={1.3} distance={5.5} />
-    </group>
+      </instancedMesh>
+      <instancedMesh ref={outerFlameRef} args={[undefined, undefined, count]}>
+        <coneGeometry args={[0.26, 0.68, 8]} />
+        <meshStandardMaterial color="#2f8fe0" emissive="#3fa9ff" emissiveIntensity={2.6} transparent opacity={0.88} />
+      </instancedMesh>
+      <instancedMesh ref={innerFlameRef} args={[undefined, undefined, count]}>
+        <coneGeometry args={[0.26, 0.68, 8]} />
+        <meshStandardMaterial color="#bfe8ff" emissive="#dff3ff" emissiveIntensity={3.2} transparent opacity={0.85} />
+      </instancedMesh>
+    </>
   );
 }
 
@@ -626,8 +746,6 @@ function ProjectPlatform({
       >
         {group.projectName}
       </Text>
-
-      <Firepit />
 
       {dockSlots.map(({ session, angle, dockRadius }) => (
         <AgentRobot
@@ -1667,8 +1785,6 @@ function DisplayIsland() {
       >
         Agent Gallery
       </Text>
-
-      <Firepit />
 
       {SHOWCASE_CHARACTERS.map((character) => (
         <ShowcaseRobot
