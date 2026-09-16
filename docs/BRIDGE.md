@@ -261,7 +261,73 @@ gentler steering, applied after it and before the final
 `clampToAnnulus`, so the firepit's own exclusion radius stays the
 authoritative last word regardless of what separation just did.
 
-## 9. Open questions
+## 9. Performance
+
+Worldview was unusable on a throttled laptop and hung outright on a phone.
+Investigating with the actual scene (dozens of real projects, not a handful
+of test ones) rather than guessing turned up two dominant costs, both
+architectural rather than tunable:
+
+- **~60 real-time `THREE.PointLight`s.** Every project platform's firepit
+  (§8) carried its own dynamic point light — with dozens of platforms,
+  dozens of lights. Three.js's standard forward renderer has no
+  per-object light culling: every light in the scene adds cost to the
+  fragment shader of *every* lit surface that uses it, not just nearby
+  ones, so this cost multiplied against the terrain, every platform,
+  every robot and every tree, all at once. This was almost certainly the
+  single largest cost by a wide margin — a GPU shader-bound one, which
+  matches "hangs" better than "runs a bit slow."
+- **~450+ draw calls even with zero linked sessions.** 58 project
+  platforms, each rendering its own hex body + ring (2), title text (1)
+  and firepit (3 meshes), plus 22 separate mountain peaks (2 cones each)
+  — none of it shared geometry, each one a full round-trip through the
+  browser's WebGL driver. Real production guidance for mobile web puts
+  the comfortable ceiling closer to 100–150 draw calls; this scene
+  started well past 400 before a single agent robot ever rendered.
+
+**What changed**, all in `world-scene.tsx`:
+
+- Every firepit's stone base and both flame cones are now three shared
+  `InstancedMesh`es across *every* platform (`InstancedFirepits`) — 3
+  draw calls total, not 3 per platform — animated from one `useFrame`
+  loop instead of one per platform, with a small per-instance phase
+  offset (so the fires don't all flicker in perfect unison, which reads
+  slightly *more* natural than before, not less). **There is no light at
+  all here now** — the glow still reads from each flame's own emissive
+  material plus Bloom, same as before; the one real, disclosed loss is
+  the very faint warm wash a point light used to cast on the platform
+  surface immediately around it, which was never central to the "looks
+  like fire" impression in the first place.
+- The mountain range (`Mountains`) is two shared `InstancedMesh`es (body,
+  snow cap) instead of 44 separate meshes — entirely static, so this is
+  a one-time `useEffect`, the same pattern `Trees` already used for its
+  70 trees.
+- `Bloom` now runs with `mipmapBlur` — a mip-chain-based blur instead of
+  several full-resolution blur passes, substantially cheaper for a
+  visually near-identical result. Native MSAA (`antialias: true`) is off,
+  since it was redundant on top of that and doubly expensive combined
+  with a >1x pixel ratio.
+- Pixel ratio is now adaptive, via drei's `PerformanceMonitor`: starts at
+  1.5 (down from a fixed 1.75 ceiling), steps down toward a floor of 1
+  under sustained low frame time, and back up when the device recovers.
+  A capable desktop never has quality reduced; a struggling laptop or
+  phone gets a lighter render automatically rather than by a blind
+  static guess. If even the DPR floor isn't enough, `onFallback` drops
+  Bloom entirely as a last resort.
+
+**What this didn't touch, and why it's the next lever if more is still
+needed:** every platform's hex body + ring (up to ~116 draw calls) and
+project-name text (~58 draw calls, SDF-rendered via drei's `Text`) are
+still one real mesh/component per platform. The same instancing technique
+above would collapse the hex bodies to ~2 draw calls, but a platform
+isn't purely decorative the way a firepit or a mountain is — it's
+clickable and highlights on hover, and `InstancedMesh` click/hover needs
+a `event.instanceId` → project lookup instead of each platform's own
+closure-captured handler. Doable, but a real (if contained) rework
+rather than a drop-in swap, so it's called out here rather than done
+silently alongside the changes above.
+
+## 10. Open questions
 
 - **Cross-machine resume** — deferred, see §5. Would need the `SessionStore`
   adapter the SDK docs point at, and a real answer to "does transcript
